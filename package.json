@@ -1,0 +1,84 @@
+{
+  "name": "scanreq",
+  "displayName": "ScanReq",
+  "description": "Real-time security scanner for Python dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
+  "version": "1.0.0",
+  "publisher": "trustdev",
+  "author": {
+    "name": "TrustDev"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "homepage": "https://scanreq.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JorgeCedilloAbarca/scanreq"
+  },
+  "bugs": {
+    "url": "https://github.com/JorgeCedilloAbarca/scanreq/issues"
+  },
+  "engines": {
+    "vscode": "^1.116.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "python",
+    "security",
+    "dependencies",
+    "vulnerabilities",
+    "CVE",
+    "requirements",
+    "pip",
+    "PyPI",
+    "audit",
+    "scanner"
+  ],
+  "activationEvents": [
+    "workspaceContains:requirements.txt"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "scanreq.scan",
+        "title": "ScanReq: Analizar requirements.txt"
+      }
+    ],
+    "configuration": {
+      "title": "ScanReq",
+      "properties": {
+        "scanreq.autoOpenPanel": {
+          "type": "boolean",
+          "default": false,
+          "description": "Abrir el panel automáticamente al iniciar VS Code o al detectar cambios en requirements.txt. / Automatically open the panel on VS Code startup or when changes are detected in requirements.txt."
+        },
+        "scanreq.showNotification": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mostrar notificación de progreso mientras se analiza requirements.txt. / Show progress notification while requirements.txt is being analyzed."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.19.17",
+    "@types/vscode": "^1.116.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.39.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
+  }
+}

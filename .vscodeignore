@@ -1,0 +1,27 @@
+# Source code — not needed in the published extension
+src/**
+
+# TypeScript config
+tsconfig.json
+
+# Linting
+.eslintrc*
+eslint.config*
+
+# Tests
+src/test/**
+.vscode-test/**
+
+# Node modules
+node_modules/**
+
+# Git
+.git/**
+.gitignore
+
+# Misc
+.DS_Store
+*.vsix
+vsc-extension-quickstart.md
+
+# Keep: out/, images/, README.md, CHANGELOG.md, package.json, LICENSE

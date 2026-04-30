@@ -17,12 +17,6 @@
 - **Extras support** — handles `uvicorn[standard]==0.27.0` correctly
 - **UTF-8 and UTF-16** encoding support for `requirements.txt`
 
-![ScanReq panel](images/screenshot-panel.png)
-
-![Smart insights](images/screenshot-insights.png)
-
-![Approximate versions](images/screenshot-approx.png)
-
 ---
 
 ## How it works
@@ -48,55 +42,37 @@
 | Feature | Free | Pro |
 |---|---|---|
 | PyPI version check | ✅ | ✅ |
-| CVE detection (exact versions) | ✅ | ✅ |
+| CVE detection (exact versions `==`) | ✅ | ✅ |
+| Visual results panel | ✅ | ✅ |
 | Smart insights | ✅ | ✅ |
 | CVE detection for non-exact versions (`>=`, `~=`…) | ❌ | ✅ |
+| Auto-detect installed version via pip | ❌ | ✅ |
 | Cross-version compatibility analysis | ❌ | ✅ |
+| Dependency conflict detection | ❌ | ✅ |
 | Safe update recommendations | ❌ | ✅ |
+| 🤖 AI prompt export (Claude, Copilot, Cursor) | ❌ | ✅ |
 
 Upgrade at [scanreq.com](https://scanreq.com)
 
 ---
 
-## Requirements
+## Activating Pro
 
-No external tools required. ScanReq uses the PyPI JSON API and OSV.dev API directly — no pip, no Python installation needed.
+1. Get your license at [scanreq.com/pricing](https://scanreq.com/pricing)
+2. Open the Command Palette (`Ctrl+Shift+P`)
+3. Run **ScanReq: Activar Plan Pro**
+4. Enter your license token — Pro activates instantly
 
 ---
 
-# ScanReq — Escáner de seguridad para dependencias Python
+## Requirements
 
-**ScanReq** analiza tu `requirements.txt` en tiempo real, detecta paquetes desactualizados consultando PyPI, e identifica vulnerabilidades CVE mediante OSV.dev — todo directamente en VS Code, sin configuración.
+No external tools required for the Free plan. ScanReq uses the PyPI JSON API and OSV.dev API directly — no pip, no Python installation needed.
 
-## Características
+For Pro features, pip must be available in your PATH for auto-detection of installed versions. If pip is not found, ScanReq shows a clear notice inside the panel.
 
-- **Consulta PyPI en tiempo real** — compara tus versiones fijadas con las últimas disponibles
-- **Detección de CVEs** — consulta OSV.dev para versiones exactas (`==`)
-- **Panel visual** — tabla con badges de estado de versión y seguridad
-- **Mensajes inteligentes** — alertas contextuales: CVEs críticos, warnings de actualización masiva, consejos accionables
-- **Badge en la barra de estado** — indicador rojo/naranja/verde, click para abrir el panel
-- **Actualización automática** — el panel se refresca al guardar `requirements.txt`
-- **Español e inglés** — el idioma sigue el ajuste de idioma de VS Code
-- **Todos los operadores pip** — `==`, `>=`, `<=`, `>`, `<`, `!=`, `~=` y rangos
-- **Soporte de extras** — maneja `uvicorn[standard]==0.27.0` correctamente
-- **Codificación UTF-8 y UTF-16** para `requirements.txt`
+---
 
-## Configuración
+## Privacy
 
-| Ajuste | Por defecto | Descripción |
-|---|---|---|
-| `scanreq.autoOpenPanel` | `false` | Abre el panel automáticamente al iniciar o al detectar cambios |
-| `scanreq.showNotification` | `true` | Muestra notificación de progreso durante el análisis |
-
-## Free vs Pro
-
-| Función | Free | Pro |
-|---|---|---|
-| Comprobación de versiones PyPI | ✅ | ✅ |
-| Detección de CVEs (versiones exactas) | ✅ | ✅ |
-| Mensajes inteligentes | ✅ | ✅ |
-| CVEs para versiones no exactas (`>=`, `~=`…) | ❌ | ✅ |
-| Análisis de compatibilidad entre versiones | ❌ | ✅ |
-| Recomendaciones de actualización segura | ❌ | ✅ |
-
-Activa el plan Pro en [scanreq.com](https://scanreq.com)
+ScanReq does not collect any telemetry or personal data. Package names and versions are sent only to PyPI (pypi.org) and OSV.dev for vulnerability lookups. License tokens are validated against scanreq.com.

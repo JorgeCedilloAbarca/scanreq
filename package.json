@@ -2,7 +2,7 @@
   "name": "scanreq",
   "displayName": "ScanReq",
   "description": "Real-time security scanner for Python dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "publisher": "trustdev",
   "author": {
     "name": "TrustDev"
@@ -45,6 +45,14 @@
       {
         "command": "scanreq.scan",
         "title": "ScanReq: Analizar requirements.txt"
+      },
+      {
+        "command": "scanreq.activateLicense",
+        "title": "ScanReq: Activar Plan Pro"
+      },
+      {
+        "command": "scanreq.deactivateLicense",
+        "title": "ScanReq: Desactivar Plan Pro"
       }
     ],
     "configuration": {

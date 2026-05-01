@@ -157,6 +157,9 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 	}
 
 	if (conflicts.length === 0 && !toolUnavailable) {
+		// Solo mostrar "sin conflictos" si el ecosistema tiene análisis real (Python)
+		// Para ecosistemas sin análisis implementado el adapter devuelve conflicts vacío pero es por diseño
+		const hasRealAnalysis = report.conflicts !== undefined;
 		html += `<div class="insight insight-ok">
 			${locale === 'es'
 				? '✓ No se detectaron conflictos de dependencias entre los paquetes instalados.'
@@ -363,6 +366,11 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 	const locale = getLocale();
 	const isPro = license.active;
 
+	// Subtítulo dinámico según los archivos escaneados
+	const subtitle = results
+		.map(r => `${ECOSYSTEM_ICONS[r.ecosystem]} ${r.filePath.split(/[\\/]/).pop() ?? ''}`)
+		.join(' · ');
+
 	// Totales globales para el summary header
 	const allPackages = results.flatMap(r => r.packages);
 	const okCount      = allPackages.filter(p => p.upToDate && p.vulnerabilities.length === 0).length;
@@ -531,7 +539,7 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 				${licenceBadge}
 			</div>
 		</div>
-		<div class="subtitle">${t('subtitle')}</div>
+		<div class="subtitle">${subtitle}</div>
 		<div class="summary">
 			<div class="summary-card ok">✓ ${okCount} ${t('upToDate')}</div>
 			<div class="summary-card outdated">↑ ${outdatedCount} ${t('outdated')}</div>

@@ -16,15 +16,19 @@ export const nodeAdapter: EcosystemAdapter = {
 			parsed.map(pkg => checkNpm(pkg.name, pkg.version, pkg.exactVersion, isPro))
 		);
 
-		// Pro: aviso si node_modules no existe (versión detectada por tool no disponible)
+		// Pro: Node.js no tiene análisis de compatibilidad cruzada implementado todavía (v2.2+).
+		// Solo mostramos la sección si node_modules no existe — para avisar al usuario.
+		// Si node_modules existe, devolvemos null para no mostrar una sección vacía engañosa.
 		let compatReport = null;
 		if (isPro) {
 			const nodeModulesAvailable = checkNodeModulesAvailability();
-			compatReport = {
-				conflicts: [],
-				safeUpdates: [],
-				toolUnavailable: !nodeModulesAvailable
-			};
+			if (!nodeModulesAvailable) {
+				compatReport = {
+					conflicts: [],
+					safeUpdates: [],
+					toolUnavailable: true
+				};
+			}
 		}
 
 		return {

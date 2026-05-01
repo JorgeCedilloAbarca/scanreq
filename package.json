@@ -1,7 +1,8 @@
 {
   "name": "scanreq",
   "displayName": "ScanReq",
-"description": "Real-time security scanner for Python and Node.js dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",  "version": "2.1.0",
+  "description": "Real-time security scanner for Python and Node.js dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
+  "version": "2.1.1",
   "publisher": "trustdev",
   "author": {
     "name": "TrustDev"

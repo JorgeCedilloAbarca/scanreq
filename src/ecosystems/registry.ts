@@ -1,14 +1,18 @@
 import { EcosystemAdapter } from './types';
 import { pythonAdapter } from './python/adapter';
 import { nodeAdapter } from './node/adapter';
-// import { rustAdapter } from './rust/adapter';   ← v2.2
-// import { goAdapter }   from './go/adapter';     ← v2.2
+import { rustAdapter } from './rust/adapter';
+import { goAdapter }   from './go/adapter';
+// import { phpAdapter }  from './php/adapter';    ← v2.3
+// import { rubyAdapter } from './ruby/adapter';   ← v2.3
 
 // Lista ordenada de adapters activos.
 // El orden determina qué ecosistema aparece primero en el panel si hay varios.
 const adapters: EcosystemAdapter[] = [
 	pythonAdapter,
 	nodeAdapter,
+	rustAdapter,
+	goAdapter,
 ];
 
 // Mapa de patrón de archivo → adapter para búsqueda rápida

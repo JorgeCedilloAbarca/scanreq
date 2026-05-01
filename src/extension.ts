@@ -15,6 +15,9 @@ export function activate(context: vscode.ExtensionContext) {
 	statusBar.command = 'scanreq.scan';
 	context.subscriptions.push(statusBar);
 
+	// Referencia al panel activo — se reutiliza en lugar de crear uno nuevo cada vez
+	let activePanel: vscode.WebviewPanel | undefined;
+
 	const runScan = async (autoTriggered = false) => {
 		const config = vscode.workspace.getConfiguration('scanreq');
 		const autoOpenPanel = config.get<boolean>('autoOpenPanel', false);
@@ -43,11 +46,8 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
-		// Contar paquetes totales para la notificación (estimación rápida)
 		if (showNotification) {
-			const ecosystemNames = foundFiles
-				.map(f => f.fileName)
-				.join(', ');
+			const ecosystemNames = foundFiles.map(f => f.fileName).join(', ');
 			vscode.window.showInformationMessage(
 				`${t('analyzing')} ${ecosystemNames}...`
 			);
@@ -62,17 +62,31 @@ export function activate(context: vscode.ExtensionContext) {
 
 		const results = await Promise.all(scanPromises);
 
-		// Actualizar statusbar con todos los resultados
 		updateStatusBar(statusBar, results);
 
 		if (!autoTriggered || autoOpenPanel) {
-			const panel = vscode.window.createWebviewPanel(
-				'scanreq',
-				'ScanReq',
-				vscode.ViewColumn.One,
-				{ enableScripts: true, enableFindWidget: true }
-			);
-			panel.webview.html = getWebviewContent(results, license);
+			if (activePanel) {
+				// Reutilizar el panel existente — actualizarlo y traerlo al frente
+				activePanel.webview.html = getWebviewContent(results, license);
+				activePanel.reveal(vscode.ViewColumn.One, true);
+			} else {
+				// Crear panel nuevo
+				activePanel = vscode.window.createWebviewPanel(
+					'scanreq',
+					'ScanReq',
+					vscode.ViewColumn.One,
+					{ enableScripts: true, enableFindWidget: true }
+				);
+				activePanel.webview.html = getWebviewContent(results, license);
+
+				// Limpiar referencia cuando el usuario cierra el panel
+				activePanel.onDidDispose(() => {
+					activePanel = undefined;
+				}, null, context.subscriptions);
+			}
+		} else if (activePanel) {
+			// Auto-triggered y panel ya abierto — actualizar silenciosamente
+			activePanel.webview.html = getWebviewContent(results, license);
 		}
 	};
 

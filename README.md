@@ -10,16 +10,18 @@
 |---|---|---|---|
 | 🐍 Python | `requirements.txt` | PyPI | OSV.dev |
 | 🟩 Node.js | `package.json` | npm | OSV.dev |
+| 🦀 Rust | `Cargo.toml` | crates.io | OSV.dev |
+| 🔵 Go | `go.mod` | proxy.golang.org | OSV.dev |
 
-More ecosystems coming in v2.2 — Rust, Go, PHP, Ruby.
+More ecosystems coming in v2.3 — PHP, Ruby.
 
 ---
 
 ## Features
 
 - **Multi-ecosystem support** — detects and scans all dependency files found in your workspace automatically
-- **Real-time registry check** — compares your pinned versions against the latest available on PyPI and npm
-- **CVE detection** — queries OSV.dev for known vulnerabilities on exact versions (`==`, fixed)
+- **Real-time registry check** — compares your pinned versions against the latest available on PyPI, npm, crates.io and the Go module proxy
+- **CVE detection** — queries OSV.dev for known vulnerabilities on exact versions
 - **Visual results panel** — color-coded table with version status and security badges, one section per ecosystem
 - **Smart insights** — contextual alerts: critical CVEs, bulk update warnings, actionable advice
 - **Status bar badge** — red/orange/green indicator at a glance, click to open the panel
@@ -33,12 +35,12 @@ More ecosystems coming in v2.2 — Rust, Go, PHP, Ruby.
 
 ## How it works
 
-1. Open any project that contains a `requirements.txt` or `package.json`
+1. Open any project that contains a `requirements.txt`, `package.json`, `Cargo.toml` or `go.mod`
 2. ScanReq activates automatically and runs a scan in the background
 3. The status bar shows the health of your dependencies at a glance
 4. Click the badge or run **ScanReq: Scan dependencies** from the Command Palette to open the full panel
 
-If your project has both files, the panel shows both ecosystems in a single view.
+If your project has multiple dependency files, the panel shows each ecosystem as a separate section in a single view.
 
 ---
 
@@ -55,7 +57,7 @@ If your project has both files, the panel shows both ecosystems in a single view
 
 | Feature | Free | Pro |
 |---|---|---|
-| All ecosystems (Python, Node.js…) | ✅ | ✅ |
+| All ecosystems (Python, Node.js, Rust, Go) | ✅ | ✅ |
 | Registry version check | ✅ | ✅ |
 | CVE detection (exact versions) | ✅ | ✅ |
 | Visual results panel | ✅ | ✅ |
@@ -82,14 +84,16 @@ Upgrade at [scanreq.com](https://scanreq.com)
 
 ## Requirements
 
-No external tools required for the Free plan. ScanReq queries PyPI, npm registry, and OSV.dev directly — no pip, no Node.js installation needed.
+No external tools required for any ecosystem. ScanReq queries PyPI, npm registry, crates.io, the Go module proxy, and OSV.dev directly — no local tools needed.
 
 For Pro features:
 - **Python** — pip must be available in your PATH for auto-detection of installed versions. If pip is not found, ScanReq shows a clear notice inside the panel.
 - **Node.js** — ScanReq reads directly from `node_modules` without requiring npm in PATH. If `node_modules` does not exist, run `npm install` first.
+- **Rust** — no local tools required. Cargo.toml always contains explicit versions.
+- **Go** — no local tools required. go.mod always contains exact versions.
 
 ---
 
 ## Privacy
 
-ScanReq does not collect any telemetry or personal data. Package names and versions are sent only to PyPI (pypi.org), npm registry (registry.npmjs.org), and OSV.dev for vulnerability lookups. License tokens are validated against scanreq.com.
+ScanReq does not collect any telemetry or personal data. Package names and versions are sent only to PyPI (pypi.org), npm registry (registry.npmjs.org), crates.io, proxy.golang.org, and OSV.dev for vulnerability lookups. License tokens are validated against scanreq.com.

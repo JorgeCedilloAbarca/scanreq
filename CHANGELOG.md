@@ -2,6 +2,27 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.2.0] - 2026-05-01
+
+### Added
+- **Rust support** — scans `Cargo.toml` (dependencies, dev-dependencies, build-dependencies) via crates.io API + OSV.dev
+- **Go support** — scans `go.mod` via Go module proxy (proxy.golang.org) + OSV.dev
+- Rust parser supports simple format (`serde = "1.0"`) and table format (`serde = { version = "1.0", features = [...] }`)
+- Go parser supports single-line and block `require (...)` directives, strips `v` prefix for version normalization
+- crates.io requests use proper User-Agent per crates.io policy
+- Go module proxy encoding for uppercase letters in module paths
+
+### Changed
+- `package.json` activationEvents now include `Cargo.toml` and `go.mod`
+- Description and keywords updated to reflect all four supported ecosystems
+
+## [2.1.2] - 2026-05-01
+
+### Fixed
+- Panel subtitle now shows dynamically which files are being scanned (e.g. `🟩 package.json`) instead of always showing `requirements.txt analysis`
+- Node.js compatibility section no longer shows misleading "no conflicts detected" when no analysis was performed — section is hidden unless `node_modules` is missing
+- Webview panel is now reused on re-scan instead of creating a new one each time
+
 ## [2.1.0] - 2026-05-01
 
 ### Added

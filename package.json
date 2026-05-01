@@ -1,8 +1,7 @@
 {
   "name": "scanreq",
   "displayName": "ScanReq",
-  "description": "Real-time security scanner for Python dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
-  "version": "2.0.0",
+"description": "Real-time security scanner for Python and Node.js dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",  "version": "2.1.0",
   "publisher": "trustdev",
   "author": {
     "name": "TrustDev"
@@ -26,25 +25,30 @@
   ],
   "keywords": [
     "python",
+    "nodejs",
+    "javascript",
     "security",
     "dependencies",
     "vulnerabilities",
     "CVE",
     "requirements",
+    "package.json",
     "pip",
+    "npm",
     "PyPI",
     "audit",
     "scanner"
   ],
   "activationEvents": [
-    "workspaceContains:requirements.txt"
+    "workspaceContains:requirements.txt",
+    "workspaceContains:package.json"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "scanreq.scan",
-        "title": "ScanReq: Analizar requirements.txt"
+        "title": "ScanReq: Analizar dependencias / Scan dependencies"
       },
       {
         "command": "scanreq.activateLicense",

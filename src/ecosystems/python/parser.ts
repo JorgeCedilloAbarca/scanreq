@@ -44,13 +44,13 @@ export function parseRequirements(content: string): ParsedPackage[] {
 			const withoutComment = line.split('#')[0].trim();
 			const match = withoutComment.match(specifierRegex);
 			if (!match) {
-				return { name: withoutComment, version: 'desconocida', exactVersion: false };
+				return { name: withoutComment, version: 'unknown', exactVersion: false };
 			}
 			const name = match[1].trim();
 			const fullSpec = match[4]?.trim() ?? '';
 
 			if (!fullSpec) {
-				return { name, version: 'desconocida', exactVersion: false };
+				return { name, version: 'unknown', exactVersion: false };
 			}
 
 			const isExact = fullSpec.startsWith('==') && !fullSpec.includes(',');

@@ -2,6 +2,25 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.1.0] - 2026-05-01
+
+### Added
+- **Multi-ecosystem architecture** — new `EcosystemAdapter` interface allows adding new languages without touching existing code
+- **Node.js support** — scans `package.json` (dependencies, devDependencies, peerDependencies, optionalDependencies) via npm registry + OSV.dev
+- **Auto-detection of installed npm versions** — reads directly from `node_modules` without requiring npm in PATH
+- **Multi-ecosystem panel** — when multiple dependency files are detected, the panel shows each ecosystem as a separate section
+
+### Changed
+- Python modules moved to `src/ecosystems/python/` — behavior unchanged
+- `osv.ts` now accepts `ecosystem` as an explicit parameter (PyPI, npm, crates.io...)
+- `extension.ts` now watches all registered dependency files simultaneously
+- `webview.ts` now renders one section per ecosystem when multiple are present
+- AI prompt export now includes all ecosystems in a single structured prompt
+
+### Fixed
+- Compatibility analysis texts (conflicts and safe updates) now correctly follow VS Code language setting
+- Duplicate packages from `peerDependencies` no longer appear twice in the Node.js results
+
 ## [2.0.0] - 2026-04-30
 
 ### Added

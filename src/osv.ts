@@ -1,17 +1,17 @@
-export interface Vulnerability {
-	id: string;
-	summary: string;
-	severity: string;
-}
+import { Vulnerability, OsvEcosystem } from './ecosystems/types';
 
-export async function checkCVEs(packageName: string, version: string): Promise<Vulnerability[]> {
+export async function checkCVEs(
+	packageName: string,
+	version: string,
+	ecosystem: OsvEcosystem
+): Promise<Vulnerability[]> {
 	try {
 		const response = await fetch('https://api.osv.dev/v1/query', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				version: version,
-				package: { name: packageName, ecosystem: 'PyPI' }
+				package: { name: packageName, ecosystem }
 			})
 		});
 		const data = await response.json() as any;
@@ -20,7 +20,7 @@ export async function checkCVEs(packageName: string, version: string): Promise<V
 		}
 		return data.vulns.slice(0, 3).map((v: any) => ({
 			id: v.id,
-			summary: v.summary || 'Sin descripción',
+			summary: v.summary || 'No description',
 			severity: v.database_specific?.severity || 'UNKNOWN'
 		}));
 	} catch {

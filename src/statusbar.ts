@@ -1,10 +1,18 @@
 import * as vscode from 'vscode';
-import { PackageInfo } from './pypi';
+import { ScanResult } from './ecosystems/types';
 import { t } from './i18n';
 
-export function updateStatusBar(statusBar: vscode.StatusBarItem, packages: PackageInfo[]): void {
-	const hasCVEs = packages.some(p => p.vulnerabilities.length > 0);
-	const hasOutdated = packages.some(p => !p.upToDate);
+export function updateStatusBar(statusBar: vscode.StatusBarItem, results: ScanResult[]): void {
+	// Aplanar todos los paquetes de todos los ecosistemas
+	const allPackages = results.flatMap(r => r.packages);
+
+	if (allPackages.length === 0) {
+		statusBar.hide();
+		return;
+	}
+
+	const hasCVEs = allPackages.some(p => p.vulnerabilities.length > 0);
+	const hasOutdated = allPackages.some(p => !p.upToDate);
 
 	if (hasCVEs) {
 		statusBar.text = t('statusCVEs');

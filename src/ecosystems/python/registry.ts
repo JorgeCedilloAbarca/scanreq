@@ -1,33 +1,23 @@
-import { checkCVEs, Vulnerability } from './osv';
-import { t } from './i18n';
+import { checkCVEs } from '../../osv';
+import { PackageResult } from '../types';
 import { getInstalledVersion } from './pip';
-
-export interface PackageInfo {
-	name: string;
-	installedVersion: string;
-	latestVersion: string;
-	upToDate: boolean;
-	exactVersion: boolean;
-	vulnerabilities: Vulnerability[];
-	detectedByPip: boolean; // true si la versión instalada fue detectada con pip show
-}
 
 export async function checkPyPI(
 	packageName: string,
 	installedVersion: string,
 	exactVersion: boolean,
 	isPro: boolean
-): Promise<PackageInfo> {
+): Promise<PackageResult> {
 	const cleanName = packageName.replace(/\[.*?\]/g, '').trim();
 	let effectiveVersion = installedVersion;
-	let detectedByPip = false;
+	let detectedByTool = false;
 
 	// Pro: si la versión no es exacta, intentar detectar la versión real instalada
 	if (isPro && !exactVersion) {
 		const pipVersion = await getInstalledVersion(cleanName);
 		if (pipVersion) {
 			effectiveVersion = pipVersion;
-			detectedByPip = true;
+			detectedByTool = true;
 		}
 	}
 
@@ -37,31 +27,33 @@ export async function checkPyPI(
 		const latestVersion = data.info.version;
 
 		// CVEs: en Free solo para exactas. En Pro también para versiones detectadas por pip
-		const canCheckCVEs = exactVersion || (isPro && detectedByPip);
+		const canCheckCVEs = exactVersion || (isPro && detectedByTool);
 		const vulnerabilities = canCheckCVEs
-			? await checkCVEs(cleanName, effectiveVersion)
+			? await checkCVEs(cleanName, effectiveVersion, 'PyPI')
 			: [];
 
 		return {
 			name: packageName,
 			installedVersion: effectiveVersion,
 			latestVersion,
-			upToDate: effectiveVersion !== 'desconocida' && effectiveVersion !== 'unknown'
+			upToDate: effectiveVersion !== 'unknown'
 				? effectiveVersion === latestVersion
 				: false,
 			exactVersion,
 			vulnerabilities,
-			detectedByPip
+			detectedByTool,
+			ecosystem: 'python'
 		};
 	} catch {
 		return {
 			name: packageName,
 			installedVersion: effectiveVersion,
-			latestVersion: t('notFound'),
+			latestVersion: 'Not found',
 			upToDate: false,
 			exactVersion,
 			vulnerabilities: [],
-			detectedByPip
+			detectedByTool,
+			ecosystem: 'python'
 		};
 	}
 }

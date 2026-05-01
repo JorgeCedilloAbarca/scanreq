@@ -2,13 +2,11 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { t } from './i18n';
-import { readFileWithEncoding, parseRequirements } from './parser';
-import { checkPyPI } from './pypi';
+import { ScanResult } from './ecosystems/types';
+import { getAdapterForFile, getAllWatchPatterns } from './ecosystems/registry';
 import { updateStatusBar } from './statusbar';
 import { getWebviewContent } from './webview';
 import { getLicenseStatus, activateLicense, deactivateLicense } from './license';
-import { checkPipAvailability } from './pip';
-import { runCompatibilityAnalysis } from './compatibility';
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('ScanReq is now active!');
@@ -25,35 +23,46 @@ export function activate(context: vscode.ExtensionContext) {
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (!workspaceFolders) { return; }
 
-		const reqPath = path.join(workspaceFolders[0].uri.fsPath, 'requirements.txt');
-		if (!fs.existsSync(reqPath)) {
+		const workspaceRoot = workspaceFolders[0].uri.fsPath;
+		const license = getLicenseStatus(context);
+		const isPro = license.active;
+
+		// Detectar qué archivos de dependencias existen en el workspace
+		const watchPatterns = getAllWatchPatterns();
+		const foundFiles: Array<{ filePath: string; fileName: string }> = [];
+
+		for (const pattern of watchPatterns) {
+			const filePath = path.join(workspaceRoot, pattern);
+			if (fs.existsSync(filePath)) {
+				foundFiles.push({ filePath, fileName: pattern });
+			}
+		}
+
+		if (foundFiles.length === 0) {
 			statusBar.hide();
 			return;
 		}
 
-		const license = getLicenseStatus(context);
-		const isPro = license.active;
-
-		const content = readFileWithEncoding(reqPath);
-		const packages = parseRequirements(content);
-
+		// Contar paquetes totales para la notificación (estimación rápida)
 		if (showNotification) {
+			const ecosystemNames = foundFiles
+				.map(f => f.fileName)
+				.join(', ');
 			vscode.window.showInformationMessage(
-				`${t('analyzing')} ${packages.length} ${t('analyzingPackages')}`
+				`${t('analyzing')} ${ecosystemNames}...`
 			);
 		}
 
-		const results = await Promise.all(
-			packages.map(pkg => checkPyPI(pkg.name, pkg.version, pkg.exactVersion, isPro))
-		);
+		// Ejecutar el scan de cada ecosistema encontrado en paralelo
+		const scanPromises = foundFiles.map(({ filePath, fileName }) => {
+			const adapter = getAdapterForFile(fileName);
+			if (!adapter) { return null; }
+			return adapter.scan(filePath, isPro);
+		}).filter(Boolean) as Promise<ScanResult>[];
 
-		// Análisis de compatibilidad — solo Pro
-		let compatReport = null;
-		if (isPro) {
-			const pip = await checkPipAvailability();
-			compatReport = await runCompatibilityAnalysis(results, !pip.available);
-		}
+		const results = await Promise.all(scanPromises);
 
+		// Actualizar statusbar con todos los resultados
 		updateStatusBar(statusBar, results);
 
 		if (!autoTriggered || autoOpenPanel) {
@@ -63,7 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.ViewColumn.One,
 				{ enableScripts: true, enableFindWidget: true }
 			);
-			panel.webview.html = getWebviewContent(results, license, compatReport);
+			panel.webview.html = getWebviewContent(results, license);
 		}
 	};
 
@@ -87,7 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const result = await activateLicense(context, token);
 			if (result.success) {
 				vscode.window.showInformationMessage(`ScanReq ✓ ${result.message}`);
-				runScan(false); // re-escanear con Pro activo
+				runScan(false);
 			} else {
 				vscode.window.showErrorMessage(`ScanReq: ${result.message}`);
 			}
@@ -109,20 +118,16 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Watcher
-	const watcher = vscode.workspace.createFileSystemWatcher('**/requirements.txt');
+	// Watcher — observa todos los archivos de dependencias registrados
+	const watchGlob = `**/{${getAllWatchPatterns().join(',')}}`;
+	const watcher = vscode.workspace.createFileSystemWatcher(watchGlob);
 	watcher.onDidChange(() => runScan(true));
 	watcher.onDidCreate(() => runScan(true));
+	watcher.onDidDelete(() => runScan(true));
 	context.subscriptions.push(watcher);
 
 	// Scan inicial
-	const workspaceFolders = vscode.workspace.workspaceFolders;
-	if (workspaceFolders) {
-		const reqPath = path.join(workspaceFolders[0].uri.fsPath, 'requirements.txt');
-		if (fs.existsSync(reqPath)) {
-			runScan(true);
-		}
-	}
+	runScan(true);
 }
 
 export function deactivate() {}

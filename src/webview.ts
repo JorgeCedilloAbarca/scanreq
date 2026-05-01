@@ -1,7 +1,8 @@
-import { PackageInfo } from './pypi';
+import { ScanResult, PackageResult, CompatibilityReport, EcosystemId } from './ecosystems/types';
 import { LicenseStatus } from './license';
-import { CompatibilityReport } from './compatibility';
 import { t, getLocale } from './i18n';
+
+// ─── Helpers visuales ─────────────────────────────────────────────────────────
 
 function getSeverityColor(severity: string): string {
 	switch (severity.toUpperCase()) {
@@ -13,7 +14,27 @@ function getSeverityColor(severity: string): string {
 	}
 }
 
-function generateInsights(packages: PackageInfo[], isPro: boolean): string {
+const ECOSYSTEM_ICONS: Record<EcosystemId, string> = {
+	python: '🐍',
+	node:   '🟩',
+	rust:   '🦀',
+	go:     '🔵',
+	php:    '🐘',
+	ruby:   '💎',
+};
+
+const ECOSYSTEM_REGISTRY_LINKS: Record<EcosystemId, (name: string) => string> = {
+	python: (n) => `https://pypi.org/project/${n.replace(/\[.*?\]/g, '')}/`,
+	node:   (n) => `https://www.npmjs.com/package/${n}`,
+	rust:   (n) => `https://crates.io/crates/${n}`,
+	go:     (n) => `https://pkg.go.dev/${n}`,
+	php:    (n) => `https://packagist.org/packages/${n}`,
+	ruby:   (n) => `https://rubygems.org/gems/${n}`,
+};
+
+// ─── Insights por ecosistema ──────────────────────────────────────────────────
+
+function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: EcosystemId): string {
 	const locale = getLocale();
 	const criticalCVEs = packages.filter(p =>
 		p.vulnerabilities.some(v => v.severity === 'CRITICAL' || v.severity === 'HIGH')
@@ -21,7 +42,7 @@ function generateInsights(packages: PackageInfo[], isPro: boolean): string {
 	const anyCVEs = packages.filter(p => p.vulnerabilities.length > 0);
 	const outdated = packages.filter(p => !p.upToDate);
 	const inexact = packages.filter(p => !p.exactVersion);
-	const detectedByPip = packages.filter(p => p.detectedByPip);
+	const detectedByTool = packages.filter(p => p.detectedByTool);
 
 	const insights: { type: string; message: string }[] = [];
 
@@ -48,10 +69,10 @@ function generateInsights(packages: PackageInfo[], isPro: boolean): string {
 				message: `${outdated.length} paquete${outdated.length > 1 ? 's disponibles' : ' disponible'} para actualizar. Revisa los changelogs antes de actualizar.`
 			});
 		}
-		if (isPro && detectedByPip.length > 0) {
+		if (isPro && detectedByTool.length > 0) {
 			insights.push({
 				type: 'info',
-				message: `✓ Pro: versión instalada detectada automáticamente con pip para ${detectedByPip.length} paquete${detectedByPip.length > 1 ? 's' : ''} con especificador no exacto.`
+				message: `✓ Pro: versión instalada detectada automáticamente para ${detectedByTool.length} paquete${detectedByTool.length > 1 ? 's' : ''} con especificador no exacto.`
 			});
 		}
 		if (anyCVEs.length === 0 && outdated.length === 0 && inexact.length === 0) {
@@ -60,13 +81,13 @@ function generateInsights(packages: PackageInfo[], isPro: boolean): string {
 		if (!isPro && inexact.length > 0) {
 			insights.push({
 				type: 'warning',
-				message: `${inexact.length} paquete${inexact.length > 1 ? 's no tienen' : ' no tiene'} versión exacta — vulnerabilidades no analizadas. Cámbialos a <code>==</code> o activa el plan Pro en <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a> para detección automática.`
+				message: `${inexact.length} paquete${inexact.length > 1 ? 's no tienen' : ' no tiene'} versión exacta — vulnerabilidades no analizadas. Activa el plan Pro en <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a> para detección automática.`
 			});
 		}
 		if (!isPro) {
 			insights.push({
 				type: 'pro',
-				message: '🔒 Análisis de compatibilidad entre versiones no disponible en el plan Free. Activa el plan Pro en <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a>.<br><br><strong>¿Por qué Pro y no pedírselo a una IA?</strong> Un agente IA necesitaría consultar PyPI, OSV.dev y cruzar dependencias en tiempo real — eso cuesta ~$0.85 por scan en tokens. Con Pro pagas $19 una vez y escaneas ilimitado. Además, la IA no tiene acceso a tu entorno local ni conoce los CVEs publicados esta semana.'
+				message: '🔒 Análisis de compatibilidad entre versiones no disponible en el plan Free. Activa el plan Pro en <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a>.<br><br><strong>¿Por qué Pro y no pedírselo a una IA?</strong> Un agente IA necesitaría consultar los registros de paquetes, OSV.dev y cruzar dependencias en tiempo real — eso cuesta ~$0.85 por scan en tokens. Con Pro pagas $19 una vez y escaneas ilimitado. Además, la IA no tiene acceso a tu entorno local ni conoce los CVEs publicados esta semana.'
 			});
 		}
 	} else {
@@ -92,10 +113,10 @@ function generateInsights(packages: PackageInfo[], isPro: boolean): string {
 				message: `${outdated.length} package${outdated.length > 1 ? 's' : ''} available to update. Review changelogs before updating.`
 			});
 		}
-		if (isPro && detectedByPip.length > 0) {
+		if (isPro && detectedByTool.length > 0) {
 			insights.push({
 				type: 'info',
-				message: `✓ Pro: installed version auto-detected via pip for ${detectedByPip.length} package${detectedByPip.length > 1 ? 's' : ''} with non-exact specifiers.`
+				message: `✓ Pro: installed version auto-detected for ${detectedByTool.length} package${detectedByTool.length > 1 ? 's' : ''} with non-exact specifiers.`
 			});
 		}
 		if (anyCVEs.length === 0 && outdated.length === 0 && inexact.length === 0) {
@@ -104,13 +125,13 @@ function generateInsights(packages: PackageInfo[], isPro: boolean): string {
 		if (!isPro && inexact.length > 0) {
 			insights.push({
 				type: 'warning',
-				message: `${inexact.length} package${inexact.length > 1 ? 's do not have' : ' does not have'} an exact version — vulnerabilities not analyzed. Switch to <code>==</code> or activate the Pro plan at <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a>.`
+				message: `${inexact.length} package${inexact.length > 1 ? 's do not have' : ' does not have'} an exact version — vulnerabilities not analyzed. Activate the Pro plan at <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a>.`
 			});
 		}
 		if (!isPro) {
 			insights.push({
 				type: 'pro',
-				message: '🔒 Version compatibility analysis is not available in the Free plan. Activate the Pro plan at <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a>.<br><br><strong>Why Pro instead of asking an AI?</strong> An AI agent would need to query PyPI, OSV.dev and cross-reference dependencies in real time — that costs ~$0.85 per scan in tokens. With Pro you pay $19 once and scan unlimited. Plus, AI has no access to your local environment and doesn\'t know about CVEs published this week.'
+				message: '🔒 Version compatibility analysis is not available in the Free plan. Activate the Pro plan at <a href="https://scanreq.com" style="color:#b899ee;">scanreq.com</a>.<br><br><strong>Why Pro instead of asking an AI?</strong> An AI agent would need to query package registries, OSV.dev and cross-reference dependencies in real time — that costs ~$0.85 per scan in tokens. With Pro you pay $19 once and scan unlimited. Plus, AI has no access to your local environment and doesn\'t know about CVEs published this week.'
 			});
 		}
 	}
@@ -118,22 +139,24 @@ function generateInsights(packages: PackageInfo[], isPro: boolean): string {
 	return insights.map(i => `<div class="insight insight-${i.type}">${i.message}</div>`).join('');
 }
 
+// ─── Sección de compatibilidad (Pro) ─────────────────────────────────────────
+
 function generateCompatibilitySection(report: CompatibilityReport, locale: string): string {
-	const { conflicts, safeUpdates, pipUnavailable } = report;
+	const { conflicts, safeUpdates, toolUnavailable } = report;
 
 	let html = `<div class="compat-section">`;
-	html += `<h2 class="section-title">${locale === 'es' ? '🔍 Análisis de Compatibilidad Pro' : '🔍 Pro Compatibility Analysis'}</h2>`;
+	html += `<h3 class="subsection-title">${locale === 'es' ? '🔍 Análisis de Compatibilidad Pro' : '🔍 Pro Compatibility Analysis'}</h3>`;
 
-	if (pipUnavailable) {
+	if (toolUnavailable) {
 		html += `<div class="insight insight-warning">
 			${locale === 'es'
-				? '⚠ pip no está disponible en el PATH. Instala Python y pip para que ScanReq pueda detectar versiones instaladas y completar el análisis de compatibilidad. <a href="https://pip.pypa.io/en/stable/installation/" style="color:#b899ee;">Ver instrucciones</a>'
-				: '⚠ pip is not available in PATH. Install Python and pip so ScanReq can detect installed versions and complete the compatibility analysis. <a href="https://pip.pypa.io/en/stable/installation/" style="color:#b899ee;">See instructions</a>'
+				? '⚠ La herramienta de detección de versiones no está disponible en el PATH. Instálala para que ScanReq pueda completar el análisis de compatibilidad.'
+				: '⚠ The version detection tool is not available in PATH. Install it so ScanReq can complete the compatibility analysis.'
 			}
 		</div>`;
 	}
 
-	if (conflicts.length === 0 && !pipUnavailable) {
+	if (conflicts.length === 0 && !toolUnavailable) {
 		html += `<div class="insight insight-ok">
 			${locale === 'es'
 				? '✓ No se detectaron conflictos de dependencias entre los paquetes instalados.'
@@ -169,7 +192,7 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 	}
 
 	if (safeUpdates.length > 0) {
-		html += `<h3 class="subsection-title" style="margin-top:24px;">
+		html += `<h3 class="subsection-title" style="margin-top:20px;">
 			${locale === 'es' ? '✓ Actualizaciones seguras recomendadas' : '✓ Recommended safe updates'}
 		</h3>`;
 		html += `<table class="compat-table">
@@ -195,31 +218,106 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 	return html;
 }
 
-function buildAIPrompt(
-	packages: PackageInfo[],
-	compatReport: CompatibilityReport | null,
-	locale: string
-): string {
+// ─── Tabla de paquetes por ecosistema ─────────────────────────────────────────
+
+function generatePackageTable(result: ScanResult, isPro: boolean, locale: string): string {
+	const { packages, ecosystem, compatReport } = result;
+	const getLinkFn = ECOSYSTEM_REGISTRY_LINKS[ecosystem];
+
+	const rows = packages.map(pkg => {
+		const versionLabel = pkg.detectedByTool
+			? `${pkg.installedVersion} <span class="tool-detected" title="${locale === 'es' ? 'Detectado automáticamente' : 'Auto-detected'}">auto</span>`
+			: pkg.exactVersion
+				? pkg.installedVersion
+				: `<span style="color:#ffcc77;" title="${locale === 'es' ? 'Versión no exacta' : 'Non-exact version'}">∼${pkg.installedVersion}</span>`;
+
+		const versionStatus = pkg.exactVersion || pkg.detectedByTool
+			? pkg.upToDate
+				? `<span class="badge ok">${t('badgeOk')}</span>`
+				: `<span class="badge outdated">↑ ${pkg.latestVersion} ${t('badgeAvailable')}</span>`
+			: `<span class="badge approx">${locale === 'es' ? '∼ Sin fijar' : '∼ Unpinned'}</span>`;
+
+		const securityBadge = pkg.vulnerabilities.length > 0
+			? `<span class="badge vuln">⚠ ${pkg.vulnerabilities.length} CVE${pkg.vulnerabilities.length > 1 ? 's' : ''}</span>`
+			: (pkg.exactVersion || pkg.detectedByTool)
+				? `<span class="badge safe">${t('badgeNoCVEs')}</span>`
+				: `<span class="badge unknown">${locale === 'es' ? '— No analizado' : '— Not analyzed'}</span>`;
+
+		const vulnDetails = pkg.vulnerabilities.map(v => `
+			<div class="vuln-detail">
+				<span class="vuln-id" style="color:${getSeverityColor(v.severity)};">${v.id}</span>
+				<span class="vuln-severity" style="color:${getSeverityColor(v.severity)};">[${v.severity}]</span>
+				<span class="vuln-summary">${v.summary}</span>
+			</div>
+		`).join('');
+
+		const pkgLink = getLinkFn(pkg.name);
+
+		return `<tr>
+			<td><a class="pkg-link" href="${pkgLink}" target="_blank">${pkg.name}</a></td>
+			<td>${versionLabel}</td>
+			<td>${pkg.latestVersion}</td>
+			<td>${versionStatus}</td>
+			<td>${securityBadge}${vulnDetails}</td>
+		</tr>`;
+	}).join('');
+
+	const compatHtml = isPro && compatReport
+		? generateCompatibilitySection(compatReport, locale)
+		: '';
+
+	return `
+		<table>
+			<thead>
+				<tr>
+					<th>${t('colPackage')}</th>
+					<th>${t('colInstalled')}</th>
+					<th>${t('colAvailable')}</th>
+					<th>${t('colVersion')}</th>
+					<th>${t('colSecurity')}</th>
+				</tr>
+			</thead>
+			<tbody>${rows}</tbody>
+		</table>
+		${compatHtml}
+		<div class="insights" style="margin-top:20px;">
+			${generateInsights(packages, isPro, ecosystem)}
+		</div>
+	`;
+}
+
+// ─── Prompt IA (Pro) ─────────────────────────────────────────────────────────
+
+function buildAIPrompt(results: ScanResult[], locale: string): string {
 	const lines: string[] = [];
 
-	const reqLines = packages.map(pkg => {
-		const op = pkg.exactVersion ? '==' : '>=';
-		return `${pkg.name}${op}${pkg.installedVersion}`;
-	});
-
 	if (locale === 'es') {
-		lines.push('Tengo el siguiente requirements.txt:');
+		lines.push('ScanReq Pro ha analizado las dependencias de mi proyecto y ha encontrado lo siguiente:');
 		lines.push('');
+	} else {
+		lines.push('ScanReq Pro has analyzed my project dependencies and found the following:');
+		lines.push('');
+	}
+
+	for (const result of results) {
+		const { ecosystem, packages, compatReport } = result;
+		const icon = ECOSYSTEM_ICONS[ecosystem];
+
+		lines.push(`${icon} ${ecosystem.toUpperCase()}`);
+		lines.push('---');
+
+		const reqLines = packages.map(pkg => {
+			const op = pkg.exactVersion ? '==' : '>=';
+			return `${pkg.name}${op}${pkg.installedVersion}`;
+		});
 		lines.push(...reqLines);
-		lines.push('');
-		lines.push('ScanReq Pro ha analizado mis dependencias y ha encontrado lo siguiente:');
 		lines.push('');
 
 		const withCVEs = packages.filter(p => p.vulnerabilities.length > 0);
 		if (withCVEs.length > 0) {
-			lines.push('VULNERABILIDADES DETECTADAS:');
+			lines.push(locale === 'es' ? 'VULNERABILIDADES:' : 'VULNERABILITIES:');
 			for (const pkg of withCVEs) {
-				lines.push(`- ${pkg.name} ${pkg.installedVersion}: ${pkg.vulnerabilities.length} CVE(s) — actualizar a ${pkg.latestVersion}`);
+				lines.push(`- ${pkg.name} ${pkg.installedVersion}: ${pkg.vulnerabilities.length} CVE(s) — ${locale === 'es' ? 'actualizar a' : 'update to'} ${pkg.latestVersion}`);
 				for (const v of pkg.vulnerabilities) {
 					lines.push(`  · ${v.id} [${v.severity}]: ${v.summary}`);
 				}
@@ -228,65 +326,30 @@ function buildAIPrompt(
 		}
 
 		if (compatReport && compatReport.conflicts.length > 0) {
-			lines.push('CONFLICTOS DE DEPENDENCIAS:');
+			lines.push(locale === 'es' ? 'CONFLICTOS DE DEPENDENCIAS:' : 'DEPENDENCY CONFLICTS:');
 			for (const c of compatReport.conflicts) {
-				lines.push(`- ${c.packageName} ${c.installedVersion} no cumple el requisito ${c.requiredSpec} de ${c.requiredBy}`);
-				lines.push(`  Recomendación: ${c.recommendation}`);
+				lines.push(`- ${c.packageName} ${c.installedVersion}: ${c.recommendation}`);
 			}
 			lines.push('');
 		}
 
 		if (compatReport && compatReport.safeUpdates.length > 0) {
-			lines.push('ACTUALIZACIONES SEGURAS RECOMENDADAS:');
+			lines.push(locale === 'es' ? 'ACTUALIZACIONES SEGURAS:' : 'SAFE UPDATES:');
 			for (const u of compatReport.safeUpdates) {
 				lines.push(`- ${u.packageName}: ${u.currentVersion} → ${u.recommendedVersion} (${u.reason})`);
 			}
 			lines.push('');
 		}
+	}
 
+	if (locale === 'es') {
 		lines.push('Por favor:');
-		lines.push('1. Actualiza el requirements.txt aplicando primero las correcciones de CVEs y conflictos, luego las actualizaciones seguras.');
+		lines.push('1. Actualiza los archivos de dependencias aplicando primero las correcciones de CVEs y conflictos, luego las actualizaciones seguras.');
 		lines.push('2. Explica brevemente cada cambio que hagas y por qué.');
 		lines.push('3. Si alguna actualización puede introducir breaking changes, avísame antes de aplicarla.');
 	} else {
-		lines.push('I have the following requirements.txt:');
-		lines.push('');
-		lines.push(...reqLines);
-		lines.push('');
-		lines.push('ScanReq Pro has analyzed my dependencies and found the following:');
-		lines.push('');
-
-		const withCVEs = packages.filter(p => p.vulnerabilities.length > 0);
-		if (withCVEs.length > 0) {
-			lines.push('VULNERABILITIES DETECTED:');
-			for (const pkg of withCVEs) {
-				lines.push(`- ${pkg.name} ${pkg.installedVersion}: ${pkg.vulnerabilities.length} CVE(s) — update to ${pkg.latestVersion}`);
-				for (const v of pkg.vulnerabilities) {
-					lines.push(`  · ${v.id} [${v.severity}]: ${v.summary}`);
-				}
-			}
-			lines.push('');
-		}
-
-		if (compatReport && compatReport.conflicts.length > 0) {
-			lines.push('DEPENDENCY CONFLICTS:');
-			for (const c of compatReport.conflicts) {
-				lines.push(`- ${c.packageName} ${c.installedVersion} does not satisfy ${c.requiredSpec} required by ${c.requiredBy}`);
-				lines.push(`  Recommendation: ${c.recommendation}`);
-			}
-			lines.push('');
-		}
-
-		if (compatReport && compatReport.safeUpdates.length > 0) {
-			lines.push('RECOMMENDED SAFE UPDATES:');
-			for (const u of compatReport.safeUpdates) {
-				lines.push(`- ${u.packageName}: ${u.currentVersion} → ${u.recommendedVersion} (${u.reason})`);
-			}
-			lines.push('');
-		}
-
 		lines.push('Please:');
-		lines.push('1. Update the requirements.txt applying CVE fixes and conflict resolutions first, then safe updates.');
+		lines.push('1. Update the dependency files applying CVE fixes and conflict resolutions first, then safe updates.');
 		lines.push('2. Briefly explain each change and why.');
 		lines.push('3. If any update may introduce breaking changes, warn me before applying it.');
 	}
@@ -294,25 +357,24 @@ function buildAIPrompt(
 	return lines.join('\n');
 }
 
-export function getWebviewContent(
-	packages: PackageInfo[],
-	license: LicenseStatus,
-	compatReport: CompatibilityReport | null
-): string {
+// ─── Punto de entrada principal ───────────────────────────────────────────────
+
+export function getWebviewContent(results: ScanResult[], license: LicenseStatus): string {
 	const locale = getLocale();
 	const isPro = license.active;
 
-	const okCount = packages.filter(p => p.upToDate && p.vulnerabilities.length === 0).length;
-	const outdatedCount = packages.filter(p => !p.upToDate).length;
-	const vulnCount = packages.filter(p => p.vulnerabilities.length > 0).length;
+	// Totales globales para el summary header
+	const allPackages = results.flatMap(r => r.packages);
+	const okCount      = allPackages.filter(p => p.upToDate && p.vulnerabilities.length === 0).length;
+	const outdatedCount = allPackages.filter(p => !p.upToDate).length;
+	const vulnCount    = allPackages.filter(p => p.vulnerabilities.length > 0).length;
 
 	const licenceBadge = isPro
 		? `<span class="license-badge pro">${license.isAdmin ? '👑 Admin' : '⚡ Pro'}</span>`
 		: `<span class="license-badge free">Free — <a href="command:scanreq.activateLicense" style="color:#b899ee;">Activar Pro</a></span>`;
 
-	// El prompt se genera en JS del lado del webview para no exponerlo en el HTML
 	const aiPromptEscaped = isPro
-		? buildAIPrompt(packages, compatReport, locale)
+		? buildAIPrompt(results, locale)
 			.replace(/\\/g, '\\\\')
 			.replace(/`/g, '\\`')
 			.replace(/\$/g, '\\$')
@@ -327,49 +389,28 @@ export function getWebviewContent(
 		</span>
 	` : '';
 
-	const rows = packages.map(pkg => {
-		const versionLabel = pkg.detectedByPip
-			? `${pkg.installedVersion} <span class="pip-detected" title="${locale === 'es' ? 'Detectado con pip' : 'Detected via pip'}">pip</span>`
-			: pkg.exactVersion
-				? pkg.installedVersion
-				: `<span style="color:#ffcc77;" title="${locale === 'es' ? 'Versión no exacta' : 'Non-exact version'}">∼${pkg.installedVersion}</span>`;
+	// Si hay un solo ecosistema → panel simple sin header de sección
+	// Si hay varios → cada uno tiene su bloque con título
+	const ecosystemSections = results.map(result => {
+		const icon = ECOSYSTEM_ICONS[result.ecosystem];
+		const tableHtml = generatePackageTable(result, isPro, locale);
 
-		const versionStatus = pkg.exactVersion || pkg.detectedByPip
-			? pkg.upToDate
-				? `<span class="badge ok">${t('badgeOk')}</span>`
-				: `<span class="badge outdated">↑ ${pkg.latestVersion} ${t('badgeAvailable')}</span>`
-			: `<span class="badge approx">${locale === 'es' ? '∼ Sin fijar' : '∼ Unpinned'}</span>`;
+		if (results.length === 1) {
+			// Sin header de ecosistema — mismo aspecto que v2.0
+			return tableHtml;
+		}
 
-		const securityBadge = pkg.vulnerabilities.length > 0
-			? `<span class="badge vuln">⚠ ${pkg.vulnerabilities.length} CVE${pkg.vulnerabilities.length > 1 ? 's' : ''}</span>`
-			: (pkg.exactVersion || pkg.detectedByPip)
-				? `<span class="badge safe">${t('badgeNoCVEs')}</span>`
-				: `<span class="badge unknown">${locale === 'es' ? '— No analizado' : '— Not analyzed'}</span>`;
-
-		const vulnDetails = pkg.vulnerabilities.map(v => `
-			<div class="vuln-detail">
-				<span class="vuln-id" style="color:${getSeverityColor(v.severity)};">${v.id}</span>
-				<span class="vuln-severity" style="color:${getSeverityColor(v.severity)};">[${v.severity}]</span>
-				<span class="vuln-summary">${v.summary}</span>
+		return `
+			<div class="ecosystem-section">
+				<div class="ecosystem-header">
+					<span class="ecosystem-icon">${icon}</span>
+					<span class="ecosystem-name">${result.ecosystem.charAt(0).toUpperCase() + result.ecosystem.slice(1)}</span>
+					<span class="ecosystem-file">${result.filePath.split('/').pop() ?? ''}</span>
+				</div>
+				${tableHtml}
 			</div>
-		`).join('');
-
-		const pkgDisplayName = pkg.name.replace(/\[.*?\]/g, '');
-
-		return `<tr>
-			<td>
-				<a class="pkg-link" href="https://pypi.org/project/${pkgDisplayName}/" target="_blank">${pkg.name}</a>
-			</td>
-			<td>${versionLabel}</td>
-			<td>${pkg.latestVersion}</td>
-			<td>${versionStatus}</td>
-			<td>${securityBadge}${vulnDetails}</td>
-		</tr>`;
+		`;
 	}).join('');
-
-	const compatSection = isPro && compatReport
-		? generateCompatibilitySection(compatReport, locale)
-		: '';
 
 	return `<!DOCTYPE html>
 	<html lang="${locale}">
@@ -423,6 +464,16 @@ export function getWebviewContent(
 			.summary-card.ok { background: rgba(40,167,69,0.15); border-color: rgba(40,167,69,0.3); color: #28a745; }
 			.summary-card.outdated { background: rgba(255,165,0,0.15); border-color: rgba(255,165,0,0.3); color: #ffa500; }
 			.summary-card.vuln { background: rgba(255,68,68,0.15); border-color: rgba(255,68,68,0.3); color: #ff4444; }
+			/* Sección por ecosistema (solo visible si hay más de uno) */
+			.ecosystem-section { margin-bottom: 40px; padding-bottom: 8px; }
+			.ecosystem-section + .ecosystem-section { border-top: 1px solid var(--vscode-panel-border); padding-top: 32px; }
+			.ecosystem-header {
+				display: flex; align-items: center; gap: 10px;
+				margin-bottom: 16px;
+			}
+			.ecosystem-icon { font-size: 18px; }
+			.ecosystem-name { font-size: 15px; font-weight: 700; }
+			.ecosystem-file { font-size: 11px; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); }
 			table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
 			.compat-table { margin-top: 8px; }
 			thead tr { border-bottom: 1px solid var(--vscode-panel-border); }
@@ -447,7 +498,7 @@ export function getWebviewContent(
 			.badge.vuln    { background: rgba(255,68,68,0.15); color: #ff4444; }
 			.badge.safe    { background: rgba(40,167,69,0.15); color: #28a745; }
 			.badge.unknown { background: rgba(147,112,219,0.15); color: #9370db; font-style: italic; }
-			.pip-detected {
+			.tool-detected {
 				display: inline-block; font-size: 9px; font-weight: 700;
 				background: rgba(147,112,219,0.2); color: #b899ee;
 				border-radius: 3px; padding: 1px 4px; margin-left: 4px;
@@ -457,8 +508,8 @@ export function getWebviewContent(
 			.vuln-id { font-weight: 600; margin-right: 6px; }
 			.vuln-summary { color: var(--vscode-descriptionForeground); }
 			.recommendation { color: #5fcc7f; font-size: 12px; }
-			.insights { margin-top: 32px; display: flex; flex-direction: column; gap: 10px; }
-			.compat-section { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--vscode-panel-border); padding-bottom: 8px; }
+			.insights { display: flex; flex-direction: column; gap: 10px; }
+			.compat-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); }
 			.insight { padding: 12px 16px; border-radius: 6px; font-size: 12px; line-height: 1.7; border-left: 3px solid; }
 			.insight-critical { background: rgba(255,68,68,0.1); border-color: #ff4444; color: #ff8888; }
 			.insight-warning  { background: rgba(255,165,0,0.1); border-color: #ffa500; color: #ffcc77; }
@@ -486,22 +537,7 @@ export function getWebviewContent(
 			<div class="summary-card outdated">↑ ${outdatedCount} ${t('outdated')}</div>
 			<div class="summary-card vuln">⚠ ${vulnCount} ${t('withCVEs')}</div>
 		</div>
-		<table>
-			<thead>
-				<tr>
-					<th>${t('colPackage')}</th>
-					<th>${t('colInstalled')}</th>
-					<th>${t('colAvailable')}</th>
-					<th>${t('colVersion')}</th>
-					<th>${t('colSecurity')}</th>
-				</tr>
-			</thead>
-			<tbody>${rows}</tbody>
-		</table>
-		${compatSection}
-		<div class="insights">
-			${generateInsights(packages, isPro)}
-		</div>
+		${ecosystemSections}
 		<div class="footer">
 			ScanReq · <a href="https://scanreq.com" style="color:inherit;">scanreq.com</a>
 			${isPro ? ` · ${locale === 'es' ? 'Plan Pro activo' : 'Pro plan active'}` : ''}
@@ -520,7 +556,6 @@ export function getWebviewContent(
 						feedback.classList.remove('visible');
 					}, 2000);
 				}).catch(() => {
-					// Fallback para entornos sin clipboard API
 					const ta = document.createElement('textarea');
 					ta.value = aiPrompt;
 					ta.style.position = 'fixed';

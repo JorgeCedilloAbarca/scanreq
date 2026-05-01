@@ -1,25 +1,5 @@
-import { PackageInfo } from './pypi';
-
-export interface ConflictDetail {
-	packageName: string;         // paquete del requirements.txt que genera el conflicto
-	requiredBy: string;          // dependencia que impone el requisito
-	requiredSpec: string;        // e.g. "requests>=2.28.0"
-	installedVersion: string;    // versión que tiene el usuario
-	recommendation: string;      // qué debería hacer
-}
-
-export interface CompatibilityReport {
-	conflicts: ConflictDetail[];
-	safeUpdates: SafeUpdate[];
-	pipUnavailable: boolean;
-}
-
-export interface SafeUpdate {
-	packageName: string;
-	currentVersion: string;
-	recommendedVersion: string;
-	reason: string;
-}
+import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate } from '../types';
+import { getLocale } from '../../i18n';
 
 interface PyPIPackageData {
 	info: {
@@ -53,7 +33,6 @@ async function fetchPyPIData(packageName: string): Promise<PyPIPackageData | nul
 	}
 }
 
-// Parsea un specifier como ">=2.28.0,<3.0" en lista de condiciones
 function parseSpecifiers(spec: string): Array<{ op: string; version: string }> {
 	return spec.split(',').map(s => {
 		const s2 = s.trim();
@@ -88,7 +67,6 @@ function satisfiesSpecifier(version: string, op: string, specVersion: string): b
 		case '==': return cmp === 0;
 		case '!=': return cmp !== 0;
 		case '~=': {
-			// Compatible release: >= specVersion, == en major.minor
 			const parts = versionToTuple(specVersion);
 			const floor = parts.slice(0, -1).join('.');
 			return cmp >= 0 && version.startsWith(floor + '.');
@@ -101,7 +79,6 @@ function versionSatisfiesAllSpecs(version: string, specs: Array<{ op: string; ve
 	return specs.every(s => satisfiesSpecifier(version, s.op, s.version));
 }
 
-// Dada una lista de versiones disponibles, encuentra la más reciente estable que cumple los specs
 function findBestVersion(available: string[], specs: Array<{ op: string; version: string }>): string | null {
 	const stable = available.filter(v => !v.includes('a') && !v.includes('b') && !v.includes('rc') && !v.includes('dev'));
 	const candidates = stable.filter(v => versionSatisfiesAllSpecs(v, specs));
@@ -110,22 +87,21 @@ function findBestVersion(available: string[], specs: Array<{ op: string; version
 }
 
 export async function runCompatibilityAnalysis(
-	packages: PackageInfo[],
-	pipUnavailable: boolean
+	packages: PackageResult[],
+	toolUnavailable: boolean
 ): Promise<CompatibilityReport> {
 	pypiCache.clear();
+	const locale = getLocale();
 
 	const conflicts: ConflictDetail[] = [];
 	const safeUpdates: SafeUpdate[] = [];
 
-	// Mapa de nombre -> versión instalada para cruce rápido
 	const installedMap = new Map<string, string>();
 	for (const pkg of packages) {
 		const cleanName = pkg.name.replace(/\[.*?\]/g, '').trim().toLowerCase();
 		installedMap.set(cleanName, pkg.installedVersion);
 	}
 
-	// Para cada paquete, obtener sus dependencias de PyPI y cruzar con lo instalado
 	const analysisPromises = packages.map(async (pkg) => {
 		const cleanName = pkg.name.replace(/\[.*?\]/g, '').trim().toLowerCase();
 		const data = await fetchPyPIData(cleanName);
@@ -134,13 +110,10 @@ export async function runCompatibilityAnalysis(
 		const requiresDist = data.info.requires_dist ?? [];
 
 		for (const depSpec of requiresDist) {
-			// Formato típico: "requests (>=2.26.0)" o "requests>=2.26.0" o "requests (>=2.0) ; extra == 'security'"
-			// Ignoramos extras condicionales para simplificar
 			if (depSpec.includes('; extra ==') || depSpec.includes(';extra==')) {
 				continue;
 			}
 
-			// Parsear nombre y specs del depSpec
 			const depMatch = depSpec.match(/^([A-Za-z0-9]([A-Za-z0-9._-]*)?)\s*(?:\(([^)]+)\))?(.*)$/);
 			if (!depMatch) { continue; }
 
@@ -148,7 +121,6 @@ export async function runCompatibilityAnalysis(
 			const specString = (depMatch[3] ?? depMatch[4] ?? '').trim();
 			if (!specString) { continue; }
 
-			// ¿Tenemos este paquete en requirements.txt?
 			const normalizedDepName = depName.replace(/-/g, '_');
 			let installedVersion: string | undefined;
 			for (const [key, val] of installedMap.entries()) {
@@ -158,7 +130,7 @@ export async function runCompatibilityAnalysis(
 				}
 			}
 
-			if (!installedVersion || installedVersion === 'desconocida' || installedVersion === 'unknown') {
+			if (!installedVersion || installedVersion === 'unknown') {
 				continue;
 			}
 
@@ -167,7 +139,6 @@ export async function runCompatibilityAnalysis(
 
 			const satisfied = versionSatisfiesAllSpecs(installedVersion, specs);
 			if (!satisfied) {
-				// Buscar versión recomendada
 				const depData = await fetchPyPIData(normalizedDepName);
 				const availableVersions = depData ? Object.keys(depData.releases) : [];
 				const bestVersion = findBestVersion(availableVersions, specs);
@@ -178,30 +149,34 @@ export async function runCompatibilityAnalysis(
 					requiredSpec: `${normalizedDepName}${specString}`,
 					installedVersion,
 					recommendation: bestVersion
-						? `Actualiza ${normalizedDepName} a ${bestVersion}`
-						: `Actualiza ${normalizedDepName} para cumplir ${specString}`
+						? locale === 'es'
+							? `Actualiza ${normalizedDepName} a ${bestVersion}`
+							: `Update ${normalizedDepName} to ${bestVersion}`
+						: locale === 'es'
+							? `Actualiza ${normalizedDepName} para cumplir ${specString}`
+							: `Update ${normalizedDepName} to satisfy ${specString}`
 				});
 			}
 		}
 
-		// Safe updates: si el paquete está desactualizado y sin conflictos conocidos
 		if (!pkg.upToDate && pkg.exactVersion) {
-			const availableVersions = Object.keys(data.releases);
-			// La versión latest ya la tenemos en latestVersion
 			safeUpdates.push({
 				packageName: pkg.name,
 				currentVersion: pkg.installedVersion,
 				recommendedVersion: pkg.latestVersion,
 				reason: pkg.vulnerabilities.length > 0
-					? `Tiene ${pkg.vulnerabilities.length} CVE(s) conocido(s)`
-					: 'Versión más reciente disponible'
+					? locale === 'es'
+						? `Tiene ${pkg.vulnerabilities.length} CVE(s) conocido(s)`
+						: `Has ${pkg.vulnerabilities.length} known CVE(s)`
+					: locale === 'es'
+						? 'Versión más reciente disponible'
+						: 'Newer version available'
 			});
 		}
 	});
 
 	await Promise.all(analysisPromises);
 
-	// Deduplicar conflictos por par (packageName, requiredBy)
 	const seen = new Set<string>();
 	const dedupedConflicts = conflicts.filter(c => {
 		const key = `${c.packageName}|${c.requiredBy}`;
@@ -213,6 +188,6 @@ export async function runCompatibilityAnalysis(
 	return {
 		conflicts: dedupedConflicts,
 		safeUpdates,
-		pipUnavailable
+		toolUnavailable
 	};
 }

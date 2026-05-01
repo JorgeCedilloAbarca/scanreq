@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 const i18n: Record<string, Record<string, string>> = {
 	es: {
 		title: 'ScanReq',
-		subtitle: 'Análisis de requirements.txt',
+		subtitle: 'Análisis de dependencias',
 		upToDate: 'al día',
 		outdated: 'desactualizados',
 		withCVEs: 'con CVEs',
@@ -29,7 +29,7 @@ const i18n: Record<string, Record<string, string>> = {
 	},
 	en: {
 		title: 'ScanReq',
-		subtitle: 'requirements.txt analysis',
+		subtitle: 'Dependency analysis',
 		upToDate: 'up to date',
 		outdated: 'outdated',
 		withCVEs: 'with CVEs',

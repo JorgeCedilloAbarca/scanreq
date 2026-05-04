@@ -6,9 +6,8 @@ import { goAdapter }     from './go/adapter';
 import { phpAdapter }    from './php/adapter';
 import { rubyAdapter }   from './ruby/adapter';
 import { javaAdapter }   from './java/adapter';
+import { gradleAdapter } from './gradle/adapter';
 
-// Lista ordenada de adapters activos.
-// El orden determina qué ecosistema aparece primero en el panel si hay varios.
 const adapters: EcosystemAdapter[] = [
 	pythonAdapter,
 	nodeAdapter,
@@ -17,9 +16,9 @@ const adapters: EcosystemAdapter[] = [
 	phpAdapter,
 	rubyAdapter,
 	javaAdapter,
+	gradleAdapter,
 ];
 
-// Mapa de patrón de archivo → adapter para búsqueda rápida
 const patternMap = new Map<string, EcosystemAdapter>();
 for (const adapter of adapters) {
 	for (const pattern of adapter.filePatterns) {
@@ -27,25 +26,14 @@ for (const adapter of adapters) {
 	}
 }
 
-/**
- * Devuelve el adapter correspondiente a un nombre de archivo, o null si no hay ninguno registrado.
- * Ejemplo: getAdapterForFile('requirements.txt') → pythonAdapter
- */
 export function getAdapterForFile(fileName: string): EcosystemAdapter | null {
 	return patternMap.get(fileName) ?? null;
 }
 
-/**
- * Devuelve todos los patrones de archivo monitorizados por algún adapter.
- * Usado por el watcher de extension.ts para saber qué archivos observar.
- */
 export function getAllWatchPatterns(): string[] {
 	return Array.from(patternMap.keys());
 }
 
-/**
- * Devuelve todos los adapters activos.
- */
 export function getAllAdapters(): EcosystemAdapter[] {
 	return [...adapters];
 }

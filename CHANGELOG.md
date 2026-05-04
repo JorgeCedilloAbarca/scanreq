@@ -2,6 +2,26 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.2.1] - 2026-05-04
+
+### Added
+- **Compatibility analysis for Node.js** — detects peer dependency conflicts via npm registry
+- **Compatibility analysis for Rust** — detects dependency conflicts via crates.io dependencies API
+- **Compatibility analysis for Go** — safe update recommendations (dependency conflict analysis pending `go mod graph` support in v2.3)
+- **Major version badge** — `⚠ Major` / `⚠ +N major` badge in the version column when a major version jump is detected (Pro only)
+- **Phased safe update table** — updates organized in three phases by migration risk: low / medium / high (Pro only)
+- **Unit tests** — 68 tests across 5 files covering all parsers and type helpers (Vitest)
+- `calcMajorVersionJump()` and `calcMigrationRisk()` exported helpers in `types.ts`
+- `majorVersionJump` field in `PackageResult` (all 4 ecosystems)
+- `migrationRisk` field in `SafeUpdate`
+
+### Fixed
+- `calcMajorVersionJump` returned incorrect values for non-numeric versions (`unknown`, `Not found`)
+- Rust table-format dependencies (`serde = { version = "1.0" }`) were incorrectly marked as `exactVersion: true`
+
+### Changed
+- README updated: Major badge feature, phased updates section, Pro feature table
+
 ## [2.2.0] - 2026-05-01
 
 ### Added

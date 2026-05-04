@@ -422,7 +422,7 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 
 	const licenceBadge = isPro
 		? `<span class="license-badge pro">${license.isAdmin ? '👑 Admin' : '⚡ Pro'}</span>`
-		: `<span class="license-badge free">Free — <a href="command:scanreq.activateLicense" style="color:#b899ee;">Activar Pro</a></span>`;
+		: `<span class="license-badge free">Free — <a href="command:scanreq.activateLicense" style="color:#b899ee;">Activar Pro</a> · <a href="https://scanreq.com/recover" style="color:var(--vscode-descriptionForeground);font-size:11px;">${locale === 'es' ? '¿Perdiste tu token?' : 'Lost your token?'}</a></span>`;
 
 	const aiPromptEscaped = isPro
 		? buildAIPrompt(results, locale)
@@ -613,7 +613,7 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 		</div>` : ''}
 		<div class="footer">
 			ScanReq · <a href="https://scanreq.com" style="color:inherit;">scanreq.com</a>
-			${isPro ? ` · ${locale === 'es' ? 'Plan Pro activo' : 'Pro plan active'}` : ''}
+			${isPro ? ` · ${locale === 'es' ? 'Plan Pro activo' : 'Pro plan active'}` : ` · <a href="https://scanreq.com/recover" style="color:inherit;">${locale === 'es' ? '¿Perdiste tu token?' : 'Lost your token?'}</a>`}
 		</div>
 		<script>
 			const aiPrompt = \`${aiPromptEscaped}\`;

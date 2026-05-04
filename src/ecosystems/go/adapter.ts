@@ -2,6 +2,7 @@ import { EcosystemAdapter, ScanResult } from '../types';
 import { parseGoMod } from './parser';
 import { checkGoModule } from './registry';
 import { runCompatibilityAnalysis } from './compatibility';
+import { checkGoAvailability } from './gotools';
 
 export const goAdapter: EcosystemAdapter = {
 	id: 'go',
@@ -24,14 +25,21 @@ export const goAdapter: EcosystemAdapter = {
 
 		let compatReport = null;
 		if (isPro) {
-			compatReport = await runCompatibilityAnalysis(packages, false);
+			const goAvail = await checkGoAvailability();
+			// Pasamos filePath para que go mod graph pueda ejecutarse en el directorio correcto.
+			// toolUnavailable refleja si Go no está en PATH.
+			compatReport = await runCompatibilityAnalysis(
+				packages,
+				filePath,
+				!goAvail.available
+			);
 		}
 
 		return {
 			ecosystem: 'go',
 			filePath,
 			packages,
-			compatReport
+			compatReport,
 		};
 	}
 };

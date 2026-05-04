@@ -1,6 +1,7 @@
 import { EcosystemAdapter, ScanResult } from '../types';
 import { parseGoMod } from './parser';
 import { checkGoModule } from './registry';
+import { runCompatibilityAnalysis } from './compatibility';
 
 export const goAdapter: EcosystemAdapter = {
 	id: 'go',
@@ -21,11 +22,16 @@ export const goAdapter: EcosystemAdapter = {
 			packages.push(...results);
 		}
 
+		let compatReport = null;
+		if (isPro) {
+			compatReport = await runCompatibilityAnalysis(packages, false);
+		}
+
 		return {
 			ecosystem: 'go',
 			filePath,
 			packages,
-			compatReport: null  // Compatibilidad Go — v2.3+
+			compatReport
 		};
 	}
 };

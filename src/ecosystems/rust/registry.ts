@@ -1,5 +1,5 @@
 import { checkCVEs } from '../../osv';
-import { PackageResult } from '../types';
+import { PackageResult, calcMajorVersionJump } from '../types';
 
 /**
  * crates.io requiere un User-Agent descriptivo por política.
@@ -47,6 +47,7 @@ export async function checkCrate(
 			exactVersion,
 			vulnerabilities,
 			detectedByTool: false,  // Rust no necesita detección via tool — Cargo.toml siempre tiene versión
+			majorVersionJump: calcMajorVersionJump(effectiveVersion, latestVersion),
 			ecosystem: 'rust'
 		};
 	} catch {
@@ -58,6 +59,7 @@ export async function checkCrate(
 			exactVersion,
 			vulnerabilities: [],
 			detectedByTool: false,
+			majorVersionJump: 0,
 			ecosystem: 'rust'
 		};
 	}

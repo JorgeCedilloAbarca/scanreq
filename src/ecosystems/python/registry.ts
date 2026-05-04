@@ -1,5 +1,5 @@
 import { checkCVEs } from '../../osv';
-import { PackageResult } from '../types';
+import { PackageResult, calcMajorVersionJump } from '../types';
 import { getInstalledVersion } from './pip';
 
 export async function checkPyPI(
@@ -42,6 +42,7 @@ export async function checkPyPI(
 			exactVersion,
 			vulnerabilities,
 			detectedByTool,
+			majorVersionJump: calcMajorVersionJump(effectiveVersion, latestVersion),
 			ecosystem: 'python'
 		};
 	} catch {
@@ -53,6 +54,7 @@ export async function checkPyPI(
 			exactVersion,
 			vulnerabilities: [],
 			detectedByTool,
+			majorVersionJump: 0,
 			ecosystem: 'python'
 		};
 	}

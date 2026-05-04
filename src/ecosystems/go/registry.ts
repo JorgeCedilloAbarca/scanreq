@@ -1,5 +1,5 @@
 import { checkCVEs } from '../../osv';
-import { PackageResult } from '../types';
+import { PackageResult, calcMajorVersionJump } from '../types';
 
 export async function checkGoModule(
 	moduleName: string,
@@ -41,6 +41,7 @@ export async function checkGoModule(
 			exactVersion,
 			vulnerabilities,
 			detectedByTool: false,
+			majorVersionJump: calcMajorVersionJump(specifiedVersion, latestVersion),
 			ecosystem: 'go'
 		};
 	} catch {
@@ -52,6 +53,7 @@ export async function checkGoModule(
 			exactVersion,
 			vulnerabilities: [],
 			detectedByTool: false,
+			majorVersionJump: 0,
 			ecosystem: 'go'
 		};
 	}

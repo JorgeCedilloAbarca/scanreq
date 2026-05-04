@@ -1,5 +1,5 @@
 import { checkCVEs } from '../../osv';
-import { PackageResult } from '../types';
+import { PackageResult, calcMajorVersionJump } from '../types';
 import { getInstalledVersionFromNodeModules } from './nodetools';
 
 export async function checkNpm(
@@ -52,6 +52,7 @@ export async function checkNpm(
 			exactVersion,
 			vulnerabilities,
 			detectedByTool,
+			majorVersionJump: calcMajorVersionJump(effectiveVersion, latestVersion),
 			ecosystem: 'node'
 		};
 	} catch {
@@ -63,6 +64,7 @@ export async function checkNpm(
 			exactVersion,
 			vulnerabilities: [],
 			detectedByTool,
+			majorVersionJump: 0,
 			ecosystem: 'node'
 		};
 	}

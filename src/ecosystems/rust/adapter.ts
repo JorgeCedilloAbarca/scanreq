@@ -1,6 +1,7 @@
 import { EcosystemAdapter, ScanResult } from '../types';
 import { parseCargoToml } from './parser';
 import { checkCrate } from './registry';
+import { runCompatibilityAnalysis } from './compatibility';
 
 export const rustAdapter: EcosystemAdapter = {
 	id: 'rust',
@@ -21,11 +22,16 @@ export const rustAdapter: EcosystemAdapter = {
 			packages.push(...results);
 		}
 
+		let compatReport = null;
+		if (isPro) {
+			compatReport = await runCompatibilityAnalysis(packages, false);
+		}
+
 		return {
 			ecosystem: 'rust',
 			filePath,
 			packages,
-			compatReport: null  // Compatibilidad Rust — v2.3+
+			compatReport
 		};
 	}
 };

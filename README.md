@@ -23,6 +23,7 @@ More ecosystems coming in v2.3 — PHP, Ruby.
 - **Real-time registry check** — compares your pinned versions against the latest available on PyPI, npm, crates.io and the Go module proxy
 - **CVE detection** — queries OSV.dev for known vulnerabilities on exact versions
 - **Visual results panel** — color-coded table with version status and security badges, one section per ecosystem
+- **Major version badge** — flags packages with breaking-change risk when a major version jump is detected (Pro)
 - **Smart insights** — contextual alerts: critical CVEs, bulk update warnings, actionable advice
 - **Status bar badge** — red/orange/green indicator at a glance, click to open the panel
 - **Auto-refresh** — panel updates automatically when any dependency file is saved
@@ -66,10 +67,23 @@ If your project has multiple dependency files, the panel shows each ecosystem as
 | Auto-detect installed version (pip / node_modules) | ❌ | ✅ |
 | Cross-version compatibility analysis | ❌ | ✅ |
 | Dependency conflict detection | ❌ | ✅ |
-| Safe update recommendations | ❌ | ✅ |
+| Safe updates — phased by migration risk (low / medium / high) | ❌ | ✅ |
+| ⚠ Major version badge — flags breaking change risk | ❌ | ✅ |
 | 🤖 AI prompt export (Claude, Copilot, Cursor) | ❌ | ✅ |
 
 Upgrade at [scanreq.com](https://scanreq.com)
+
+---
+
+## Pro — Safe Update Phases
+
+When Pro is active, the safe update recommendations are organized into three phases to help you prioritize without breaking your project:
+
+- **Phase 1 — Low risk**: patch or minor updates with no CVEs. Apply directly.
+- **Phase 2 — Medium risk**: updates with CVEs, or a single major version jump. Review the changelog first.
+- **Phase 3 — High risk (Major)**: two or more major version jumps. Review your code for breaking changes before updating.
+
+Within each phase, packages with CVEs are listed first.
 
 ---
 

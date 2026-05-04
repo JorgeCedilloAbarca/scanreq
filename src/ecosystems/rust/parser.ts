@@ -94,11 +94,12 @@ export function parseCargoToml(filePath: string): ParsedPackage[] {
 			if (!versionMatch) { continue; }
 
 			const rawVersion = versionMatch[1];
-			const exact = isExactVersion(rawVersion);
+			// En formato tabla Cargo aplica ^ implícitamente — nunca es exacta
+			// salvo que tenga prefijo = explícito (e.g. "=1.0.0"), que es muy raro.
 			results.push({
 				name,
-				version: exact ? rawVersion : cleanVersion(rawVersion),
-				exactVersion: exact,
+				version: cleanVersion(rawVersion),
+				exactVersion: false,
 				section: currentSection
 			});
 		}

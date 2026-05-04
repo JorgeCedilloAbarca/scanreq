@@ -196,25 +196,63 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 
 	if (safeUpdates.length > 0) {
 		html += `<h3 class="subsection-title" style="margin-top:20px;">
-			${locale === 'es' ? '✓ Actualizaciones seguras recomendadas' : '✓ Recommended safe updates'}
+			${locale === 'es' ? '✓ Actualizaciones recomendadas' : '✓ Recommended updates'}
 		</h3>`;
-		html += `<table class="compat-table">
-			<thead><tr>
-				<th>${locale === 'es' ? 'Paquete' : 'Package'}</th>
-				<th>${locale === 'es' ? 'Actual' : 'Current'}</th>
-				<th>${locale === 'es' ? 'Recomendado' : 'Recommended'}</th>
-				<th>${locale === 'es' ? 'Motivo' : 'Reason'}</th>
-			</tr></thead>
-			<tbody>`;
-		for (const upd of safeUpdates) {
-			html += `<tr>
-				<td><strong>${upd.packageName}</strong></td>
-				<td><span class="badge outdated">${upd.currentVersion}</span></td>
-				<td><span class="badge ok">${upd.recommendedVersion}</span></td>
-				<td>${upd.reason}</td>
-			</tr>`;
+
+		const phases: Array<{ risk: 'low'|'medium'|'high'; label: string; note: string }> = [
+			{
+				risk: 'low',
+				label: locale === 'es' ? 'Fase 1 — Riesgo bajo' : 'Phase 1 — Low risk',
+				note: locale === 'es' ? 'Actualiza primero. Sin riesgo de breaking changes.' : 'Update first. No breaking change risk.'
+			},
+			{
+				risk: 'medium',
+				label: locale === 'es' ? 'Fase 2 — Riesgo medio' : 'Phase 2 — Medium risk',
+				note: locale === 'es' ? 'Revisa el changelog antes de actualizar.' : 'Review changelog before updating.'
+			},
+			{
+				risk: 'high',
+				label: locale === 'es' ? 'Fase 3 — Riesgo alto (Major)' : 'Phase 3 — High risk (Major)',
+				note: locale === 'es' ? 'Requiere revisión de código. Posibles breaking changes.' : 'Requires code review. Possible breaking changes.'
+			}
+		];
+
+		for (const phase of phases) {
+			const phaseUpdates = safeUpdates
+				.filter(u => u.migrationRisk === phase.risk)
+				.sort((a, b) => {
+					// CVEs primero dentro de cada fase
+					const aHasCVE = a.reason.includes('CVE') ? 0 : 1;
+					const bHasCVE = b.reason.includes('CVE') ? 0 : 1;
+					return aHasCVE - bHasCVE;
+				});
+
+			if (phaseUpdates.length === 0) { continue; }
+
+			html += `<div class="phase-header phase-${phase.risk}">
+				<span class="phase-label">${phase.label}</span>
+				<span class="phase-note">${phase.note}</span>
+			</div>`;
+
+			html += `<table class="compat-table">
+				<thead><tr>
+					<th>${locale === 'es' ? 'Paquete' : 'Package'}</th>
+					<th>${locale === 'es' ? 'Actual' : 'Current'}</th>
+					<th>${locale === 'es' ? 'Recomendado' : 'Recommended'}</th>
+					<th>${locale === 'es' ? 'Motivo' : 'Reason'}</th>
+				</tr></thead>
+				<tbody>`;
+
+			for (const upd of phaseUpdates) {
+				html += `<tr>
+					<td><strong>${upd.packageName}</strong></td>
+					<td><span class="badge outdated">${upd.currentVersion}</span></td>
+					<td><span class="badge ok">${upd.recommendedVersion}</span></td>
+					<td>${upd.reason}</td>
+				</tr>`;
+			}
+			html += `</tbody></table>`;
 		}
-		html += `</tbody></table>`;
 	}
 
 	html += `</div>`;
@@ -234,10 +272,15 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 				? pkg.installedVersion
 				: `<span style="color:#ffcc77;" title="${locale === 'es' ? 'Versión no exacta' : 'Non-exact version'}">∼${pkg.installedVersion}</span>`;
 
+		const majorBadge = isPro && !pkg.upToDate && pkg.majorVersionJump >= 1
+			? pkg.majorVersionJump === 1
+				? `<span class="badge major" title="${locale === 'es' ? 'Salto de versión mayor — puede incluir cambios incompatibles' : 'Major version jump — may include breaking changes'}">⚠ Major</span>`
+				: `<span class="badge major" title="${locale === 'es' ? 'Salto de versión mayor — puede incluir cambios incompatibles' : 'Major version jump — may include breaking changes'}">⚠ +${pkg.majorVersionJump} major</span>`
+			: '';
 		const versionStatus = pkg.exactVersion || pkg.detectedByTool
 			? pkg.upToDate
 				? `<span class="badge ok">${t('badgeOk')}</span>`
-				: `<span class="badge outdated">↑ ${pkg.latestVersion} ${t('badgeAvailable')}</span>`
+				: `<span class="badge outdated">↑ ${pkg.latestVersion} ${t('badgeAvailable')}</span>${majorBadge}`
 			: `<span class="badge approx">${locale === 'es' ? '∼ Sin fijar' : '∼ Unpinned'}</span>`;
 
 		const securityBadge = pkg.vulnerabilities.length > 0
@@ -506,6 +549,17 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			.badge.vuln    { background: rgba(255,68,68,0.15); color: #ff4444; }
 			.badge.safe    { background: rgba(40,167,69,0.15); color: #28a745; }
 			.badge.unknown { background: rgba(147,112,219,0.15); color: #9370db; font-style: italic; }
+			.badge.major   { background: rgba(255,100,50,0.15); color: #ff6432; border: 1px solid rgba(255,100,50,0.3); margin-left: 6px; font-size: 10px; }
+			.phase-header {
+				display: flex; align-items: baseline; gap: 10px;
+				margin: 16px 0 6px 0; padding: 8px 12px;
+				border-radius: 6px; border-left: 3px solid;
+			}
+			.phase-low    { background: rgba(40,167,69,0.08); border-color: #28a745; }
+			.phase-medium { background: rgba(255,165,0,0.08); border-color: #ffa500; }
+			.phase-high   { background: rgba(255,100,50,0.08); border-color: #ff6432; }
+			.phase-label  { font-size: 12px; font-weight: 700; color: var(--vscode-foreground); }
+			.phase-note   { font-size: 11px; color: var(--vscode-descriptionForeground); }
 			.tool-detected {
 				display: inline-block; font-size: 9px; font-weight: 700;
 				background: rgba(147,112,219,0.2); color: #b899ee;
@@ -528,6 +582,11 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 				background: rgba(255,255,255,0.08); padding: 1px 5px;
 				border-radius: 3px; font-family: var(--vscode-editor-font-family); font-style: normal;
 			}
+			.major-note {
+				margin-top: 24px; padding: 10px 16px;
+				background: rgba(255,100,50,0.08); border-left: 3px solid #ff6432;
+				border-radius: 6px; font-size: 11px; color: #ff9070; line-height: 1.6;
+			}
 			.footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--vscode-panel-border); font-size: 11px; color: var(--vscode-descriptionForeground); padding-bottom: 32px; }
 		</style>
 	</head>
@@ -546,6 +605,12 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			<div class="summary-card vuln">⚠ ${vulnCount} ${t('withCVEs')}</div>
 		</div>
 		${ecosystemSections}
+		${isPro ? `<div class="major-note">
+			${locale === 'es'
+				? '⚠ Los badges <strong>Major</strong> indican un salto de versión mayor. Estos suelen incluir cambios incompatibles con versiones anteriores. Revisa el changelog antes de actualizar.'
+				: '⚠ <strong>Major</strong> badges indicate a major version jump. These often include breaking changes. Review the changelog before updating.'
+			}
+		</div>` : ''}
 		<div class="footer">
 			ScanReq · <a href="https://scanreq.com" style="color:inherit;">scanreq.com</a>
 			${isPro ? ` · ${locale === 'es' ? 'Plan Pro activo' : 'Pro plan active'}` : ''}

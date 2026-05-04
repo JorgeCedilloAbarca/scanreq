@@ -14,13 +14,15 @@
 | 🔵 Go | `go.mod` | proxy.golang.org | OSV.dev |
 | 🐘 PHP | `composer.json` | Packagist | OSV.dev |
 | 💎 Ruby | `Gemfile` | RubyGems | OSV.dev |
+| ☕ Java (Maven) | `pom.xml` | Maven Central | OSV.dev |
+| 🐘 Java (Gradle) | `build.gradle` / `build.gradle.kts` | Maven Central | OSV.dev |
 
 ---
 
 ## Features
 
 - **Multi-ecosystem support** — detects and scans all dependency files found in your workspace automatically
-- **Real-time registry check** — compares your pinned versions against the latest available on PyPI, npm, crates.io, the Go module proxy, Packagist and RubyGems
+- **Real-time registry check** — compares your pinned versions against the latest available on PyPI, npm, crates.io, the Go module proxy, Packagist, RubyGems and Maven Central
 - **CVE detection** — queries OSV.dev for known vulnerabilities on exact versions
 - **Visual results panel** — color-coded table with version status and security badges, one section per ecosystem
 - **Major version badge** — flags packages with breaking-change risk when a major version jump is detected (Pro)
@@ -37,7 +39,7 @@
 
 ## How it works
 
-1. Open any project that contains a `requirements.txt`, `package.json`, `Cargo.toml`, `go.mod`, `composer.json` or `Gemfile`
+1. Open any project that contains a supported dependency file (`requirements.txt`, `package.json`, `Cargo.toml`, `go.mod`, `composer.json`, `Gemfile`, `pom.xml`, `build.gradle` or `build.gradle.kts`)
 2. ScanReq activates automatically and runs a scan in the background
 3. The status bar shows the health of your dependencies at a glance
 4. Click the badge or run **ScanReq: Scan dependencies** from the Command Palette to open the full panel
@@ -59,7 +61,7 @@ If your project has multiple dependency files, the panel shows each ecosystem as
 
 | Feature | Free | Pro |
 |---|---|---|
-| All ecosystems (Python, Node.js, Rust, Go, PHP, Ruby) | ✅ | ✅ |
+| All ecosystems (Python, Node.js, Rust, Go, PHP, Ruby, Java) | ✅ | ✅ |
 | Registry version check | ✅ | ✅ |
 | CVE detection (exact versions) | ✅ | ✅ |
 | Visual results panel | ✅ | ✅ |
@@ -100,7 +102,7 @@ Within each phase, packages with CVEs are listed first.
 
 ## Requirements
 
-No external tools required for any ecosystem. ScanReq queries PyPI, npm registry, crates.io, the Go module proxy, Packagist, RubyGems, and OSV.dev directly — no local tools needed.
+No external tools required for any ecosystem. ScanReq queries all registries directly — no local tools needed.
 
 For Pro features:
 - **Python** — pip must be available in your PATH for auto-detection of installed versions. If pip is not found, ScanReq shows a clear notice inside the panel.
@@ -109,9 +111,10 @@ For Pro features:
 - **Go** — if Go is installed and available in your PATH, ScanReq runs `go mod graph` to detect transitive dependency conflicts. Without Go in PATH, safe update recommendations are still available.
 - **PHP** — no local tools required. If `composer.lock` is present, it is used for precise installed versions.
 - **Ruby** — no local tools required. If `Gemfile.lock` is present, it is used for precise installed versions.
+- **Java (Maven / Gradle)** — no local tools required. Versions are read directly from `pom.xml` or `build.gradle` / `build.gradle.kts`.
 
 ---
 
 ## Privacy
 
-ScanReq does not collect any telemetry or personal data. Package names and versions are sent only to PyPI (pypi.org), npm registry (registry.npmjs.org), crates.io, proxy.golang.org, repo.packagist.org, rubygems.org, and OSV.dev for vulnerability lookups. License tokens are validated against scanreq.com.
+ScanReq does not collect any telemetry or personal data. Package names and versions are sent only to the relevant public registries (PyPI, npm, crates.io, proxy.golang.org, repo.packagist.org, rubygems.org, search.maven.org) and to OSV.dev for vulnerability lookups. License tokens are validated against scanreq.com.

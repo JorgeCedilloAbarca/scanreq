@@ -1,4 +1,4 @@
-import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate } from '../types';
+import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate, calcMigrationRisk } from '../types';
 import { getLocale } from '../../i18n';
 
 interface PyPIPackageData {
@@ -170,7 +170,8 @@ export async function runCompatibilityAnalysis(
 						: `Has ${pkg.vulnerabilities.length} known CVE(s)`
 					: locale === 'es'
 						? 'Versión más reciente disponible'
-						: 'Newer version available'
+						: 'Newer version available',
+				migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0)
 			});
 		}
 	});

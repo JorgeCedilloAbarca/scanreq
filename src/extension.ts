@@ -1,12 +1,55 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { t } from './i18n';
 import { ScanResult } from './ecosystems/types';
 import { getAdapterForFile, getAllWatchPatterns } from './ecosystems/registry';
 import { updateStatusBar } from './statusbar';
 import { getWebviewContent } from './webview';
 import { getLicenseStatus, activateLicense, deactivateLicense } from './license';
+
+// Directorios a excluir de la búsqueda — contienen archivos de dependencias
+// que no son del proyecto raíz sino de dependencias instaladas
+const EXCLUDE_GLOB = '{**/node_modules/**,**/.git/**,**/vendor/**,**/target/**,**/.build/**,**/dist/**,**/build/**,**/__pycache__/**,**/.venv/**,**/venv/**,**/env/**,**/.cargo/**}';
+
+// Máximo de archivos a escanear por patrón — protección ante repos muy grandes
+const MAX_FILES_PER_PATTERN = 20;
+
+/**
+ * Busca todos los archivos de dependencias en el workspace completo,
+ * excluyendo directorios de dependencias instaladas y artefactos de build.
+ * Soporta monorepos con múltiples archivos por ecosistema.
+ */
+async function findDependencyFiles(): Promise<Array<{ filePath: string; fileName: string }>> {
+	const patterns = getAllWatchPatterns();
+	const found: Array<{ filePath: string; fileName: string }> = [];
+	const seenPaths = new Set<string>();
+
+	await Promise.all(patterns.map(async (pattern) => {
+		const uris = await vscode.workspace.findFiles(
+			`**/${pattern}`,
+			EXCLUDE_GLOB,
+			MAX_FILES_PER_PATTERN
+		);
+
+		for (const uri of uris) {
+			const filePath = uri.fsPath;
+			if (!seenPaths.has(filePath)) {
+				seenPaths.add(filePath);
+				found.push({ filePath, fileName: pattern });
+			}
+		}
+	}));
+
+	// Ordenar: raíz primero, luego por profundidad de carpeta, luego alfabético
+	found.sort((a, b) => {
+		const depthA = a.filePath.split(path.sep).length;
+		const depthB = b.filePath.split(path.sep).length;
+		if (depthA !== depthB) { return depthA - depthB; }
+		return a.filePath.localeCompare(b.filePath);
+	});
+
+	return found;
+}
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('ScanReq is now active!');
@@ -26,20 +69,11 @@ export function activate(context: vscode.ExtensionContext) {
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (!workspaceFolders) { return; }
 
-		const workspaceRoot = workspaceFolders[0].uri.fsPath;
 		const license = getLicenseStatus(context);
 		const isPro = license.active;
 
-		// Detectar qué archivos de dependencias existen en el workspace
-		const watchPatterns = getAllWatchPatterns();
-		const foundFiles: Array<{ filePath: string; fileName: string }> = [];
-
-		for (const pattern of watchPatterns) {
-			const filePath = path.join(workspaceRoot, pattern);
-			if (fs.existsSync(filePath)) {
-				foundFiles.push({ filePath, fileName: pattern });
-			}
-		}
+		// Buscar archivos de dependencias en todo el workspace (monorepo support)
+		const foundFiles = await findDependencyFiles();
 
 		if (foundFiles.length === 0) {
 			statusBar.hide();
@@ -47,13 +81,13 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		if (showNotification) {
-			const ecosystemNames = foundFiles.map(f => f.fileName).join(', ');
+			const ecosystemNames = [...new Set(foundFiles.map(f => f.fileName))].join(', ');
 			vscode.window.showInformationMessage(
 				`${t('analyzing')} ${ecosystemNames}...`
 			);
 		}
 
-		// Ejecutar el scan de cada ecosistema encontrado en paralelo
+		// Ejecutar el scan de cada archivo encontrado en paralelo
 		const scanPromises = foundFiles.map(({ filePath, fileName }) => {
 			const adapter = getAdapterForFile(fileName);
 			if (!adapter) { return null; }
@@ -66,11 +100,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 		if (!autoTriggered || autoOpenPanel) {
 			if (activePanel) {
-				// Reutilizar el panel existente — actualizarlo y traerlo al frente
 				activePanel.webview.html = getWebviewContent(results, license);
 				activePanel.reveal(vscode.ViewColumn.One, true);
 			} else {
-				// Crear panel nuevo
 				activePanel = vscode.window.createWebviewPanel(
 					'scanreq',
 					'ScanReq',
@@ -79,13 +111,11 @@ export function activate(context: vscode.ExtensionContext) {
 				);
 				activePanel.webview.html = getWebviewContent(results, license);
 
-				// Limpiar referencia cuando el usuario cierra el panel
 				activePanel.onDidDispose(() => {
 					activePanel = undefined;
 				}, null, context.subscriptions);
 			}
 		} else if (activePanel) {
-			// Auto-triggered y panel ya abierto — actualizar silenciosamente
 			activePanel.webview.html = getWebviewContent(results, license);
 		}
 	};
@@ -132,7 +162,7 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Watcher — observa todos los archivos de dependencias registrados
+	// Watcher — observa todos los archivos de dependencias en cualquier subcarpeta
 	const watchGlob = `**/{${getAllWatchPatterns().join(',')}}`;
 	const watcher = vscode.workspace.createFileSystemWatcher(watchGlob);
 	watcher.onDidChange(() => runScan(true));

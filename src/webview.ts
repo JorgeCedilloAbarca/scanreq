@@ -409,13 +409,43 @@ function buildAIPrompt(results: ScanResult[], locale: string): string {
 
 // ─── Punto de entrada principal ───────────────────────────────────────────────
 
+/**
+ * Devuelve la ruta relativa del archivo al workspace raíz.
+ * En monorepos muestra e.g. "frontend/package.json" en lugar de solo "package.json".
+ * Si no hay workspace abierto o el archivo está en la raíz, devuelve solo el nombre.
+ */
+function getRelativePath(filePath: string): string {
+	const workspaceFolders = (globalThis as any).__vscode_workspace_folders as string[] | undefined;
+	// En el webview no tenemos acceso a vscode API — recibimos la ruta en el resultado
+	// Extraemos la parte relativa eliminando el prefijo del workspace si está disponible
+	const normalized = filePath.replace(/\\/g, '/');
+	const parts = normalized.split('/');
+	// Detectar si hay más de un componente significativo (no solo el nombre del archivo)
+	// mostrando hasta 2 niveles de profundidad para no saturar el panel
+	if (parts.length >= 2) {
+		const last = parts[parts.length - 1];
+		const parent = parts[parts.length - 2];
+		// Si el padre no es una carpeta típica de raíz (src, lib, etc.) mostrarlo
+		const rootLikeFolders = new Set(['src', 'lib', 'app', 'packages', 'apps', 'services', 'modules']);
+		return rootLikeFolders.has(parent) ? `${parent}/${last}` : `${parent}/${last}`;
+	}
+	return parts[parts.length - 1] ?? filePath;
+}
+
 export function getWebviewContent(results: ScanResult[], license: LicenseStatus): string {
 	const locale = getLocale();
 	const isPro = license.active;
 
 	// Subtítulo dinámico según los archivos escaneados
 	const subtitle = results
-		.map(r => `${ECOSYSTEM_ICONS[r.ecosystem]} ${r.filePath.split(/[\\/]/).pop() ?? ''}`)
+		.map(r => {
+			const parts = r.filePath.replace(/\\\\/g, '/').split('/');
+			// Mostrar las últimas 2 partes de la ruta para identificar la carpeta en monorepos
+			const display = parts.length >= 2
+				? parts.slice(-2).join('/')
+				: (parts[parts.length - 1] ?? '');
+			return `${ECOSYSTEM_ICONS[r.ecosystem]} ${display}`;
+		})
 		.join(' · ');
 
 	// Totales globales para el summary header
@@ -460,7 +490,10 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 				<div class="ecosystem-header">
 					<span class="ecosystem-icon">${icon}</span>
 					<span class="ecosystem-name">${result.ecosystem.charAt(0).toUpperCase() + result.ecosystem.slice(1)}</span>
-					<span class="ecosystem-file">${result.filePath.split('/').pop() ?? ''}</span>
+					<span class="ecosystem-file">${(() => {
+					const parts = result.filePath.replace(/\\\\/g, '/').split('/');
+					return parts.length >= 2 ? parts.slice(-2).join('/') : (parts[parts.length-1] ?? '');
+				})()}</span>
 				</div>
 				${tableHtml}
 			</div>

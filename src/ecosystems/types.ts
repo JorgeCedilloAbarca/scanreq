@@ -1,8 +1,8 @@
 // ─── Ecosistemas soportados ───────────────────────────────────────────────────
 
-export type EcosystemId = 'python' | 'node' | 'rust' | 'go' | 'php' | 'ruby';
+export type EcosystemId = 'python' | 'node' | 'rust' | 'go' | 'php' | 'ruby' | 'java';
 
-export type OsvEcosystem = 'PyPI' | 'npm' | 'crates.io' | 'Go' | 'Packagist' | 'RubyGems';
+export type OsvEcosystem = 'PyPI' | 'npm' | 'crates.io' | 'Go' | 'Packagist' | 'RubyGems' | 'Maven';
 
 // ─── Resultado por paquete ────────────────────────────────────────────────────
 
@@ -83,11 +83,14 @@ export function calcMajorVersionJump(from: string, to: string): number {
 /**
  * Calcula el migrationRisk de una actualización basándose en el salto de versión mayor
  * y la presencia de CVEs.
+ *
+ * Lógica:
+ * - 0 saltos mayores, sin CVEs → low
+ * - 0 saltos mayores, con CVEs → medium  (hay que actualizar pero no hay breaking changes)
+ * - 1 salto mayor              → medium
+ * - 2+ saltos mayores          → high
  */
-export function calcMigrationRisk(
-	majorJump: number,
-	hasCVEs: boolean
-): 'low' | 'medium' | 'high' {
+export function calcMigrationRisk(majorJump: number, hasCVEs: boolean): 'low' | 'medium' | 'high' {
 	if (majorJump >= 2) { return 'high'; }
 	if (majorJump === 1 || hasCVEs) { return 'medium'; }
 	return 'low';

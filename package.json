@@ -1,8 +1,8 @@
 {
   "name": "scanreq",
   "displayName": "ScanReq",
-  "description": "Real-time security scanner for Python, Node.js, Rust, Go, PHP and Ruby dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
-  "version": "2.3.0",
+  "description": "Real-time security scanner for Python, Node.js, Rust, Go, PHP, Ruby and Java (Maven) dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
+  "version": "2.4.0",
   "publisher": "trustdev",
   "author": {
     "name": "TrustDev"
@@ -33,8 +33,14 @@
     "golang",
     "php",
     "ruby",
+    "java",
+    "maven",
     "composer",
     "gemfile",
+    "pom.xml",
+    "maven-central",
+    "packagist",
+    "rubygems",
     "security",
     "dependencies",
     "vulnerabilities",
@@ -47,8 +53,6 @@
     "npm",
     "crates",
     "PyPI",
-    "packagist",
-    "rubygems",
     "audit",
     "scanner"
   ],
@@ -58,7 +62,8 @@
     "workspaceContains:Cargo.toml",
     "workspaceContains:go.mod",
     "workspaceContains:composer.json",
-    "workspaceContains:Gemfile"
+    "workspaceContains:Gemfile",
+    "workspaceContains:pom.xml"
   ],
   "main": "./out/extension.js",
   "contributes": {

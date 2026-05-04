@@ -5,6 +5,7 @@ import { rustAdapter }   from './rust/adapter';
 import { goAdapter }     from './go/adapter';
 import { phpAdapter }    from './php/adapter';
 import { rubyAdapter }   from './ruby/adapter';
+import { javaAdapter }   from './java/adapter';
 
 // Lista ordenada de adapters activos.
 // El orden determina qué ecosistema aparece primero en el panel si hay varios.
@@ -15,6 +16,7 @@ const adapters: EcosystemAdapter[] = [
 	goAdapter,
 	phpAdapter,
 	rubyAdapter,
+	javaAdapter,
 ];
 
 // Mapa de patrón de archivo → adapter para búsqueda rápida

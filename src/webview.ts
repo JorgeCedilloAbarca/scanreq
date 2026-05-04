@@ -21,6 +21,7 @@ const ECOSYSTEM_ICONS: Record<EcosystemId, string> = {
 	go:     '🔵',
 	php:    '🐘',
 	ruby:   '💎',
+	java:   '☕',
 };
 
 const ECOSYSTEM_REGISTRY_LINKS: Record<EcosystemId, (name: string) => string> = {
@@ -30,6 +31,7 @@ const ECOSYSTEM_REGISTRY_LINKS: Record<EcosystemId, (name: string) => string> = 
 	go:     (n) => `https://pkg.go.dev/${n}`,
 	php:    (n) => `https://packagist.org/packages/${n}`,
 	ruby:   (n) => `https://rubygems.org/gems/${n}`,
+	java:   (n) => `https://search.maven.org/artifact/${n.replace(':', '/')}`,
 };
 
 // ─── Insights por ecosistema ──────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { t } from './i18n';
 import { ScanResult } from './ecosystems/types';
 import { getAdapterForFile, getAllWatchPatterns } from './ecosystems/registry';
@@ -7,38 +8,53 @@ import { updateStatusBar } from './statusbar';
 import { getWebviewContent } from './webview';
 import { getLicenseStatus, activateLicense, deactivateLicense } from './license';
 
-// Directorios a excluir de la búsqueda
-const EXCLUDE_GLOB = '{**/node_modules/**,**/.git/**,**/vendor/**,**/target/**,**/.build/**,**/dist/**,**/build/**,**/__pycache__/**,**/.venv/**,**/venv/**,**/env/**,**/.cargo/**}';
+const EXCLUDE_DIRS = new Set([
+	'node_modules', '.git', 'vendor', 'target', '.build',
+	'dist', 'build', '__pycache__', '.venv', 'venv', 'env',
+	'.cargo', '.mvn', '.idea', '.vscode', 'out', 'bin', 'obj',
+	'.gradle', '.m2', 'gradle', '.dart_tool', 'Pods',
+]);
 
-// Máximo de archivos a escanear por patrón
+const MAX_DEPTH             = 5;
 const MAX_FILES_PER_PATTERN = 20;
 
 /**
- * Busca todos los archivos de dependencias en el workspace completo.
- * Soporta monorepos con múltiples archivos por ecosistema.
+ * Búsqueda síncrona y rápida de archivos de dependencias.
+ * No usa setImmediate — el walk es lo suficientemente rápido
+ * cuando excluimos los directorios pesados correctamente.
  */
-async function findDependencyFiles(): Promise<Array<{ filePath: string; fileName: string }>> {
-	const patterns = getAllWatchPatterns();
+function findDependencyFiles(workspaceRoot: string): Array<{ filePath: string; fileName: string }> {
+	const patterns    = getAllWatchPatterns();
+	const patternSet  = new Set(patterns);
 	const found: Array<{ filePath: string; fileName: string }> = [];
-	const seenPaths = new Set<string>();
+	const countPerPattern = new Map<string, number>();
 
-	await Promise.all(patterns.map(async (pattern) => {
-		const uris = await vscode.workspace.findFiles(
-			`**/${pattern}`,
-			EXCLUDE_GLOB,
-			MAX_FILES_PER_PATTERN
-		);
+	function walk(dir: string, depth: number): void {
+		if (depth > MAX_DEPTH) { return; }
 
-		for (const uri of uris) {
-			const filePath = uri.fsPath;
-			if (!seenPaths.has(filePath)) {
-				seenPaths.add(filePath);
-				found.push({ filePath, fileName: pattern });
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+
+		for (const entry of entries) {
+			if (entry.isDirectory()) {
+				if (EXCLUDE_DIRS.has(entry.name) || entry.name.startsWith('.')) { continue; }
+				walk(path.join(dir, entry.name), depth + 1);
+			} else if (entry.isFile()) {
+				if (!patternSet.has(entry.name)) { continue; }
+				const count = countPerPattern.get(entry.name) ?? 0;
+				if (count >= MAX_FILES_PER_PATTERN) { continue; }
+				countPerPattern.set(entry.name, count + 1);
+				found.push({ filePath: path.join(dir, entry.name), fileName: entry.name });
 			}
 		}
-	}));
+	}
 
-	// Ordenar: raíz primero, luego por profundidad, luego alfabético
+	walk(workspaceRoot, 0);
+
 	found.sort((a, b) => {
 		const depthA = a.filePath.split(path.sep).length;
 		const depthB = b.filePath.split(path.sep).length;
@@ -57,74 +73,90 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(statusBar);
 
 	let activePanel: vscode.WebviewPanel | undefined;
-	let initialScanDone = false;
+	let scanInProgress = false;
+
+	const getWorkspaceRoot = (): string | null => {
+		const folders = vscode.workspace.workspaceFolders;
+		return folders ? folders[0].uri.fsPath : null;
+	};
+
+	const showScanning = () => {
+		statusBar.text             = '$(sync~spin) ScanReq';
+		statusBar.tooltip          = t('analyzing') + '...';
+		statusBar.backgroundColor  = undefined;
+		statusBar.show();
+	};
 
 	const runScan = async (autoTriggered = false) => {
-		const config = vscode.workspace.getConfiguration('scanreq');
-		const autoOpenPanel    = config.get<boolean>('autoOpenPanel', false);
-		const showNotification = config.get<boolean>('showNotification', true);
+		if (scanInProgress) { return; }
+		scanInProgress = true;
 
-		const workspaceFolders = vscode.workspace.workspaceFolders;
-		if (!workspaceFolders) { return; }
+		try {
+			const config           = vscode.workspace.getConfiguration('scanreq');
+			const autoOpenPanel    = config.get<boolean>('autoOpenPanel', false);
+			const showNotification = config.get<boolean>('showNotification', true);
 
-		const license = getLicenseStatus(context);
-		const isPro   = license.active;
+			const workspaceRoot = getWorkspaceRoot();
+			if (!workspaceRoot) { return; }
 
-		const foundFiles = await findDependencyFiles();
+			const license = getLicenseStatus(context);
+			const isPro   = license.active;
 
-		if (foundFiles.length === 0) {
-			statusBar.hide();
-			return;
-		}
+			// Mostrar badge de progreso inmediatamente
+			showScanning();
 
-		// Marcar que el scan inicial se completó al menos una vez
-		initialScanDone = true;
+			// Buscar archivos — síncrono pero rápido gracias a EXCLUDE_DIRS
+			const foundFiles = findDependencyFiles(workspaceRoot);
 
-		if (showNotification) {
-			const ecosystemNames = [...new Set(foundFiles.map(f => f.fileName))].join(', ');
-			vscode.window.showInformationMessage(
-				`${t('analyzing')} ${ecosystemNames}...`
-			);
-		}
-
-		const scanPromises = foundFiles.map(({ filePath, fileName }) => {
-			const adapter = getAdapterForFile(fileName);
-			if (!adapter) { return null; }
-			return adapter.scan(filePath, isPro);
-		}).filter(Boolean) as Promise<ScanResult>[];
-
-		const results = await Promise.all(scanPromises);
-
-		updateStatusBar(statusBar, results);
-
-		if (!autoTriggered || autoOpenPanel) {
-			if (activePanel) {
-				activePanel.webview.html = getWebviewContent(results, license);
-				activePanel.reveal(vscode.ViewColumn.One, true);
-			} else {
-				activePanel = vscode.window.createWebviewPanel(
-					'scanreq',
-					'ScanReq',
-					vscode.ViewColumn.One,
-					{ enableScripts: true, enableFindWidget: true }
-				);
-				activePanel.webview.html = getWebviewContent(results, license);
-
-				activePanel.onDidDispose(() => {
-					activePanel = undefined;
-				}, null, context.subscriptions);
+			if (foundFiles.length === 0) {
+				statusBar.hide();
+				return;
 			}
-		} else if (activePanel) {
-			activePanel.webview.html = getWebviewContent(results, license);
+
+			if (showNotification) {
+				const ecosystemNames = [...new Set(foundFiles.map(f => f.fileName))].join(', ');
+				vscode.window.showInformationMessage(`${t('analyzing')} ${ecosystemNames}...`);
+			}
+
+			const scanPromises = foundFiles.map(({ filePath, fileName }) => {
+				const adapter = getAdapterForFile(fileName);
+				if (!adapter) { return null; }
+				return adapter.scan(filePath, isPro);
+			}).filter(Boolean) as Promise<ScanResult>[];
+
+			const results = await Promise.all(scanPromises);
+
+			updateStatusBar(statusBar, results);
+
+			if (!autoTriggered || autoOpenPanel) {
+				if (activePanel) {
+					activePanel.webview.html = getWebviewContent(results, license);
+					activePanel.reveal(vscode.ViewColumn.One, true);
+				} else {
+					activePanel = vscode.window.createWebviewPanel(
+						'scanreq', 'ScanReq', vscode.ViewColumn.One,
+						{ enableScripts: true, enableFindWidget: true }
+					);
+					activePanel.webview.html = getWebviewContent(results, license);
+					activePanel.onDidDispose(
+						() => { activePanel = undefined; },
+						null,
+						context.subscriptions
+					);
+				}
+			} else if (activePanel) {
+				activePanel.webview.html = getWebviewContent(results, license);
+			}
+		} finally {
+			scanInProgress = false;
 		}
 	};
 
-	// Comando principal
+	// Comandos
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scanreq.scan', () => runScan(false))
 	);
 
-	// Comando — activar licencia Pro
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scanreq.activateLicense', async () => {
 			const token = await vscode.window.showInputBox({
@@ -135,7 +167,6 @@ export function activate(context: vscode.ExtensionContext) {
 				password: false
 			});
 			if (!token) { return; }
-
 			const result = await activateLicense(context, token);
 			if (result.success) {
 				vscode.window.showInformationMessage(`ScanReq ✓ ${result.message}`);
@@ -146,13 +177,11 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Comando — desactivar licencia
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scanreq.deactivateLicense', async () => {
 			const confirm = await vscode.window.showWarningMessage(
 				'¿Desactivar el Plan Pro de ScanReq? Perderás acceso a las funciones avanzadas.',
-				'Desactivar',
-				'Cancelar'
+				'Desactivar', 'Cancelar'
 			);
 			if (confirm !== 'Desactivar') { return; }
 			await deactivateLicense(context);
@@ -161,35 +190,15 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Watcher — observa todos los archivos en cualquier subcarpeta
-	// onDidCreate también actúa como fallback del scan inicial:
-	// cuando Java Extension Pack termina de indexar (~30s), los archivos
-	// se vuelven visibles y onDidCreate dispara para pom.xml/build.gradle,
-	// lo que ejecuta runScan(true) automáticamente.
+	// Watcher
 	const watchGlob = `**/{${getAllWatchPatterns().join(',')}}`;
 	const watcher   = vscode.workspace.createFileSystemWatcher(watchGlob);
-
 	watcher.onDidChange(() => runScan(true));
+	watcher.onDidCreate(() => runScan(true));
 	watcher.onDidDelete(() => runScan(true));
-
-	// onDidCreate: si el scan inicial no encontró archivos (workspace aún indexando),
-	// este evento actuará de fallback cuando los archivos sean visibles para VS Code.
-	watcher.onDidCreate(() => {
-		if (!initialScanDone) {
-			// Primera vez que aparece un archivo de dependencias — ejecutar scan inicial
-			runScan(true);
-		} else {
-			// Archivo nuevo añadido al proyecto — rescanear normalmente
-			runScan(true);
-		}
-	});
-
 	context.subscriptions.push(watcher);
 
-	// Scan inicial — intento inmediato.
-	// Para proyectos Python/Node/Rust/Go/PHP/Ruby esto es suficiente.
-	// Para proyectos Java con Extension Pack, el workspace puede no estar
-	// indexado aún — el watcher onDidCreate actuará como fallback automático.
+	// Scan inicial
 	runScan(true);
 }
 

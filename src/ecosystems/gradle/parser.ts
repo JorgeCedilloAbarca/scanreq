@@ -39,7 +39,7 @@ export async function parseBuildGradleAsync(filePath: string): Promise<ParsedPac
 	if (!depsBlock) { return []; }
 
 	// 1. Extraer BOMs declarados con platform() o enforcedPlatform()
-	const boms = extractBoms(depsBlock, variables);
+	const boms = extractBoms(depsBlock, variables, content);
 
 	// 2. Resolver versiones de todos los BOMs en paralelo
 	const bomVersionMaps = await Promise.all(
@@ -179,12 +179,15 @@ interface BomRef {
 }
 
 /**
- * Extrae los BOMs declarados con platform() o enforcedPlatform() en el bloque de dependencias.
- * Groovy: implementation platform('org.springframework.boot:spring-boot-dependencies:3.2.1')
- * Kotlin: implementation(platform("org.junit:junit-bom:5.9.1"))
+ * Extrae los BOMs aplicables al proyecto. Dos fuentes:
+ *
+ * 1. platform() / enforcedPlatform() explícitos en el bloque dependencies
+ * 2. Plugin org.springframework.boot — aplica implícitamente spring-boot-dependencies BOM
  */
-function extractBoms(depsBlock: string, variables: Map<string, string>): BomRef[] {
+function extractBoms(depsBlock: string, variables: Map<string, string>, fullContent: string): BomRef[] {
 	const boms: BomRef[] = [];
+
+	// 1. platform() / enforcedPlatform() explícitos
 	const platformRe = /(?:platform|enforcedPlatform)\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 	let m: RegExpExecArray | null;
 
@@ -197,7 +200,6 @@ function extractBoms(depsBlock: string, variables: Map<string, string>): BomRef[
 		const artifactId = parts[1].trim();
 		let   version    = parts[2].trim();
 
-		// Resolver variable si es necesario
 		version = version
 			.replace(/\$\{(\w+)\}/g, (_, k) => variables.get(k) ?? version)
 			.replace(/\$(\w+)/g,     (_, k) => variables.get(k) ?? version);
@@ -207,9 +209,24 @@ function extractBoms(depsBlock: string, variables: Map<string, string>): BomRef[
 		}
 	}
 
+	// 2. Plugin org.springframework.boot — BOM implícito spring-boot-dependencies
+	// Detecta: id 'org.springframework.boot' version '2.7.18'
+	//       o: id("org.springframework.boot") version "3.2.1"
+	const springBootPluginRe = /id\s*[('""]org\.springframework\.boot['")]+\s*version\s*['"]([^'"]+)['"]/;
+	const springMatch = fullContent.match(springBootPluginRe);
+	if (springMatch) {
+		const springVersion = springMatch[1].trim();
+		if (springVersion && !springVersion.includes('$')) {
+			boms.push({
+				groupId:    'org.springframework.boot',
+				artifactId: 'spring-boot-dependencies',
+				version:    springVersion,
+			});
+		}
+	}
+
 	return boms;
 }
-
 /**
  * Descarga el POM de un BOM desde Maven Central y extrae el mapa
  * artifactId → version de su sección <dependencyManagement>.

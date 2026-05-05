@@ -57,10 +57,11 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(statusBar);
 
 	let activePanel: vscode.WebviewPanel | undefined;
+	let initialScanDone = false;
 
 	const runScan = async (autoTriggered = false) => {
 		const config = vscode.workspace.getConfiguration('scanreq');
-		const autoOpenPanel  = config.get<boolean>('autoOpenPanel', false);
+		const autoOpenPanel    = config.get<boolean>('autoOpenPanel', false);
 		const showNotification = config.get<boolean>('showNotification', true);
 
 		const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -69,13 +70,15 @@ export function activate(context: vscode.ExtensionContext) {
 		const license = getLicenseStatus(context);
 		const isPro   = license.active;
 
-		// Buscar archivos de dependencias en todo el workspace (monorepo support)
 		const foundFiles = await findDependencyFiles();
 
 		if (foundFiles.length === 0) {
 			statusBar.hide();
 			return;
 		}
+
+		// Marcar que el scan inicial se completó al menos una vez
+		initialScanDone = true;
 
 		if (showNotification) {
 			const ecosystemNames = [...new Set(foundFiles.map(f => f.fileName))].join(', ');
@@ -159,38 +162,35 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// Watcher — observa todos los archivos en cualquier subcarpeta
+	// onDidCreate también actúa como fallback del scan inicial:
+	// cuando Java Extension Pack termina de indexar (~30s), los archivos
+	// se vuelven visibles y onDidCreate dispara para pom.xml/build.gradle,
+	// lo que ejecuta runScan(true) automáticamente.
 	const watchGlob = `**/{${getAllWatchPatterns().join(',')}}`;
-	const watcher = vscode.workspace.createFileSystemWatcher(watchGlob);
+	const watcher   = vscode.workspace.createFileSystemWatcher(watchGlob);
+
 	watcher.onDidChange(() => runScan(true));
-	watcher.onDidCreate(() => runScan(true));
 	watcher.onDidDelete(() => runScan(true));
+
+	// onDidCreate: si el scan inicial no encontró archivos (workspace aún indexando),
+	// este evento actuará de fallback cuando los archivos sean visibles para VS Code.
+	watcher.onDidCreate(() => {
+		if (!initialScanDone) {
+			// Primera vez que aparece un archivo de dependencias — ejecutar scan inicial
+			runScan(true);
+		} else {
+			// Archivo nuevo añadido al proyecto — rescanear normalmente
+			runScan(true);
+		}
+	});
+
 	context.subscriptions.push(watcher);
 
-	// Scan inicial con retry.
-	// VS Code puede tardar en indexar el workspace al abrirlo (especialmente proyectos
-	// Java/Maven con muchos archivos). findFiles() puede devolver 0 resultados si se
-	// llama demasiado pronto. Esperamos a que el workspace esté listo y reintentamos
-	// una vez si el primer intento no encuentra archivos.
-	const initialScan = async () => {
-		// Primer intento inmediato
-		const firstFound = await findDependencyFiles();
-		if (firstFound.length > 0) {
-			runScan(true);
-			return;
-		}
-
-		// Si no encontró nada, esperar a que VS Code termine de indexar y reintentar
-		// onDidChangeWorkspaceFolders no ayuda aquí — usamos un delay razonable
-		setTimeout(async () => {
-			const retryFound = await findDependencyFiles();
-			if (retryFound.length > 0) {
-				runScan(true);
-			}
-			// Si sigue sin encontrar nada, el proyecto no tiene archivos soportados
-		}, 3000);
-	};
-
-	initialScan();
+	// Scan inicial — intento inmediato.
+	// Para proyectos Python/Node/Rust/Go/PHP/Ruby esto es suficiente.
+	// Para proyectos Java con Extension Pack, el workspace puede no estar
+	// indexado aún — el watcher onDidCreate actuará como fallback automático.
+	runScan(true);
 }
 
 export function deactivate() {}

@@ -7,16 +7,14 @@ import { updateStatusBar } from './statusbar';
 import { getWebviewContent } from './webview';
 import { getLicenseStatus, activateLicense, deactivateLicense } from './license';
 
-// Directorios a excluir de la búsqueda — contienen archivos de dependencias
-// que no son del proyecto raíz sino de dependencias instaladas
+// Directorios a excluir de la búsqueda
 const EXCLUDE_GLOB = '{**/node_modules/**,**/.git/**,**/vendor/**,**/target/**,**/.build/**,**/dist/**,**/build/**,**/__pycache__/**,**/.venv/**,**/venv/**,**/env/**,**/.cargo/**}';
 
-// Máximo de archivos a escanear por patrón — protección ante repos muy grandes
+// Máximo de archivos a escanear por patrón
 const MAX_FILES_PER_PATTERN = 20;
 
 /**
- * Busca todos los archivos de dependencias en el workspace completo,
- * excluyendo directorios de dependencias instaladas y artefactos de build.
+ * Busca todos los archivos de dependencias en el workspace completo.
  * Soporta monorepos con múltiples archivos por ecosistema.
  */
 async function findDependencyFiles(): Promise<Array<{ filePath: string; fileName: string }>> {
@@ -40,7 +38,7 @@ async function findDependencyFiles(): Promise<Array<{ filePath: string; fileName
 		}
 	}));
 
-	// Ordenar: raíz primero, luego por profundidad de carpeta, luego alfabético
+	// Ordenar: raíz primero, luego por profundidad, luego alfabético
 	found.sort((a, b) => {
 		const depthA = a.filePath.split(path.sep).length;
 		const depthB = b.filePath.split(path.sep).length;
@@ -58,19 +56,18 @@ export function activate(context: vscode.ExtensionContext) {
 	statusBar.command = 'scanreq.scan';
 	context.subscriptions.push(statusBar);
 
-	// Referencia al panel activo — se reutiliza en lugar de crear uno nuevo cada vez
 	let activePanel: vscode.WebviewPanel | undefined;
 
 	const runScan = async (autoTriggered = false) => {
 		const config = vscode.workspace.getConfiguration('scanreq');
-		const autoOpenPanel = config.get<boolean>('autoOpenPanel', false);
+		const autoOpenPanel  = config.get<boolean>('autoOpenPanel', false);
 		const showNotification = config.get<boolean>('showNotification', true);
 
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (!workspaceFolders) { return; }
 
 		const license = getLicenseStatus(context);
-		const isPro = license.active;
+		const isPro   = license.active;
 
 		// Buscar archivos de dependencias en todo el workspace (monorepo support)
 		const foundFiles = await findDependencyFiles();
@@ -87,7 +84,6 @@ export function activate(context: vscode.ExtensionContext) {
 			);
 		}
 
-		// Ejecutar el scan de cada archivo encontrado en paralelo
 		const scanPromises = foundFiles.map(({ filePath, fileName }) => {
 			const adapter = getAdapterForFile(fileName);
 			if (!adapter) { return null; }
@@ -120,7 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	};
 
-	// Comando principal — escanear
+	// Comando principal
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scanreq.scan', () => runScan(false))
 	);
@@ -162,7 +158,7 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// Watcher — observa todos los archivos de dependencias en cualquier subcarpeta
+	// Watcher — observa todos los archivos en cualquier subcarpeta
 	const watchGlob = `**/{${getAllWatchPatterns().join(',')}}`;
 	const watcher = vscode.workspace.createFileSystemWatcher(watchGlob);
 	watcher.onDidChange(() => runScan(true));
@@ -170,8 +166,31 @@ export function activate(context: vscode.ExtensionContext) {
 	watcher.onDidDelete(() => runScan(true));
 	context.subscriptions.push(watcher);
 
-	// Scan inicial
-	runScan(true);
+	// Scan inicial con retry.
+	// VS Code puede tardar en indexar el workspace al abrirlo (especialmente proyectos
+	// Java/Maven con muchos archivos). findFiles() puede devolver 0 resultados si se
+	// llama demasiado pronto. Esperamos a que el workspace esté listo y reintentamos
+	// una vez si el primer intento no encuentra archivos.
+	const initialScan = async () => {
+		// Primer intento inmediato
+		const firstFound = await findDependencyFiles();
+		if (firstFound.length > 0) {
+			runScan(true);
+			return;
+		}
+
+		// Si no encontró nada, esperar a que VS Code termine de indexar y reintentar
+		// onDidChangeWorkspaceFolders no ayuda aquí — usamos un delay razonable
+		setTimeout(async () => {
+			const retryFound = await findDependencyFiles();
+			if (retryFound.length > 0) {
+				runScan(true);
+			}
+			// Si sigue sin encontrar nada, el proyecto no tiene archivos soportados
+		}, 3000);
+	};
+
+	initialScan();
 }
 
 export function deactivate() {}

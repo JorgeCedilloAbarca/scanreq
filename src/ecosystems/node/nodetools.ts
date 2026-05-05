@@ -27,35 +27,38 @@ export function clearLockfileCache(): void {
  * Devuelve null si no se puede determinar la versión por ningún método.
  */
 export async function getInstalledVersionFromNodeModules(
-	packageName: string
+	packageName: string,
+	packageDir?: string
 ): Promise<string | null> {
-	const workspaceRoot = getWorkspaceRoot();
-	if (!workspaceRoot) { return null; }
+	// Usar la carpeta del package.json si se proporciona (monorepo support)
+	// Fallback al workspace root para compatibilidad hacia atrás
+	const searchRoot = packageDir ?? getWorkspaceRoot();
+	if (!searchRoot) { return null; }
 
 	// 1. node_modules — más preciso
-	const fromNodeModules = readFromNodeModules(workspaceRoot, packageName);
+	const fromNodeModules = readFromNodeModules(searchRoot, packageName);
 	if (fromNodeModules) { return fromNodeModules; }
 
 	// 2-4. Lockfiles — fallback cuando node_modules no existe
-	return readFromLockfile(workspaceRoot, packageName);
+	return readFromLockfile(searchRoot, packageName);
 }
 
 /**
  * Verifica si node_modules existe en el workspace.
  * Ahora también devuelve true si hay un lockfile disponible como alternativa.
  */
-export function checkNodeModulesAvailability(): boolean {
-	const workspaceRoot = getWorkspaceRoot();
-	if (!workspaceRoot) { return false; }
+export function checkNodeModulesAvailability(packageDir?: string): boolean {
+	const searchRoot = packageDir ?? getWorkspaceRoot();
+	if (!searchRoot) { return false; }
 
 	// node_modules presente
-	if (fs.existsSync(path.join(workspaceRoot, 'node_modules'))) { return true; }
+	if (fs.existsSync(path.join(searchRoot, 'node_modules'))) { return true; }
 
 	// Lockfile presente — podemos resolver versiones aunque no haya node_modules
 	return (
-		fs.existsSync(path.join(workspaceRoot, 'package-lock.json')) ||
-		fs.existsSync(path.join(workspaceRoot, 'pnpm-lock.yaml')) ||
-		fs.existsSync(path.join(workspaceRoot, 'yarn.lock'))
+		fs.existsSync(path.join(searchRoot, 'package-lock.json')) ||
+		fs.existsSync(path.join(searchRoot, 'pnpm-lock.yaml')) ||
+		fs.existsSync(path.join(searchRoot, 'yarn.lock'))
 	);
 }
 
@@ -81,23 +84,23 @@ function readFromNodeModules(workspaceRoot: string, packageName: string): string
  * Lee la versión instalada desde el lockfile disponible en el workspace.
  * Usa caché para no releer el archivo en cada paquete del scan.
  */
-function readFromLockfile(workspaceRoot: string, packageName: string): string | null {
-	// Usar caché si ya parseamos el lockfile para este workspace
-	if (lockfileCache && lockfileCacheRoot === workspaceRoot) {
+function readFromLockfile(searchRoot: string, packageName: string): string | null {
+	// Usar caché si ya parseamos el lockfile para este directorio
+	if (lockfileCache && lockfileCacheRoot === searchRoot) {
 		return lockfileCache.get(packageName) ?? null;
 	}
 
 	// Intentar cada lockfile en orden de preferencia
 	const map =
-		tryParsePackageLock(workspaceRoot) ??
-		tryParsePnpmLock(workspaceRoot) ??
-		tryParseYarnLock(workspaceRoot);
+		tryParsePackageLock(searchRoot) ??
+		tryParsePnpmLock(searchRoot) ??
+		tryParseYarnLock(searchRoot);
 
 	if (!map) { return null; }
 
 	// Guardar en caché
 	lockfileCache = map;
-	lockfileCacheRoot = workspaceRoot;
+	lockfileCacheRoot = searchRoot;
 
 	return map.get(packageName) ?? null;
 }

@@ -51,9 +51,10 @@ export async function checkMaven(
 		let latestVersion: string = docs[0]?.latestVersion;
 		if (!latestVersion || typeof latestVersion !== 'string') { return notFound; }
 
-		// Si la versión parece una fecha (YYYYMMDD.HHMMSS o YYYYMMDD),
-		// buscar la versión semver estable más reciente entre todas las versiones del artefacto
-		if (isDateVersion(latestVersion)) {
+		// Si latestVersion es una fecha legacy o un pre-release (milestone, alpha, beta, RC),
+		// buscar la versión semver estable más reciente entre todas las versiones del artefacto.
+		// Ejemplos afectados: commons-io (20030203.000550), junit-jupiter (5.13.0-M3)
+		if (isDateVersion(latestVersion) || !isStableSemver(latestVersion)) {
 			const semverLatest = await findLatestSemverVersion(groupId, artifactId);
 			if (semverLatest) {
 				latestVersion = semverLatest;

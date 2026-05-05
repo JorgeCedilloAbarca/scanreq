@@ -1,5 +1,5 @@
 import { EcosystemAdapter, ScanResult } from '../types';
-import { parsePomXml } from './parser';
+import { parsePomXmlAsync } from './parser';
 import { checkMaven } from './registry';
 import { runCompatibilityAnalysis } from './compatibility';
 
@@ -9,9 +9,9 @@ export const javaAdapter: EcosystemAdapter = {
 	filePatterns: ['pom.xml'],
 
 	async scan(filePath: string, isPro: boolean): Promise<ScanResult> {
-		const parsed = parsePomXml(filePath);
+		// parsePomXmlAsync resuelve versiones del <parent> Spring Boot via BOM
+		const parsed = await parsePomXmlAsync(filePath);
 
-		// Maven Central no impone rate limits estrictos — 10 en paralelo por cortesía
 		const CONCURRENCY = 10;
 		const packages = [];
 		for (let i = 0; i < parsed.length; i += CONCURRENCY) {

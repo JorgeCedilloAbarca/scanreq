@@ -10,25 +10,28 @@ export interface ParsedPackage {
 	scope: string;        // 'compile' | 'test' | 'provided' | 'runtime' | 'system'
 }
 
+// Cache de BOMs descargados durante el scan
+const bomCache = new Map<string, Map<string, string>>();
+
 /**
- * Parser de pom.xml.
+ * Parser asíncrono de pom.xml — resuelve versiones de dependencias sin versión
+ * cuando vienen de un <parent> de Spring Boot u otros BOMs conocidos.
  *
- * Soporta:
- * - Dependencias en <dependencies> y <dependencyManagement>
- * - Resolución de versiones como ${property} usando <properties>
- * - También resuelve ${project.version} desde el bloque <project>
- * - Todos los scopes (compile, test, provided, runtime, system)
- * - Dependencias sin versión (heredadas de parent/BOM) → version: "unknown"
- *
- * No soporta (fuera de alcance para análisis estático sin Maven):
- * - Resolución de versiones heredadas de <parent> remoto
- * - Resolución de BOMs importados remotamente
- *
- * En Maven todas las versiones declaradas son exactas por definición
- * (no hay rangos en uso real — los rangos [1.0,2.0) existen en la spec
- * pero son antipattern y casi nunca se usan).
+ * Patrón Spring Boot Maven (el más común):
+ *   <parent>
+ *     <groupId>org.springframework.boot</groupId>
+ *     <artifactId>spring-boot-starter-parent</artifactId>
+ *     <version>3.2.1</version>
+ *   </parent>
+ *   <dependencies>
+ *     <dependency>
+ *       <groupId>org.springframework.boot</groupId>
+ *       <artifactId>spring-boot-starter-web</artifactId>
+ *       <!-- sin versión — viene del parent -->
+ *     </dependency>
+ *   </dependencies>
  */
-export function parsePomXml(filePath: string): ParsedPackage[] {
+export async function parsePomXmlAsync(filePath: string): Promise<ParsedPackage[]> {
 	let content: string;
 	try {
 		content = fs.readFileSync(filePath, 'utf8');
@@ -36,26 +39,27 @@ export function parsePomXml(filePath: string): ParsedPackage[] {
 		return [];
 	}
 
-	// Extraer properties (incluyendo project.version)
 	const properties = extractProperties(content);
 
-	const seen = new Set<string>();
+	// Extraer BOM del <parent> si es Spring Boot
+	const parentBom = extractParentBom(content, properties);
+	const bomVersions = parentBom
+		? await resolveBomVersions(parentBom.groupId, parentBom.artifactId, parentBom.version)
+		: new Map<string, string>();
+
+	const seen    = new Set<string>();
 	const results: ParsedPackage[] = [];
 
-	// Procesar dependencyManagement primero (prioridad más baja — dependencies la sobreescribe)
-	const mgmtDeps = extractDependencies(content, 'dependencyManagement', properties);
+	// dependencyManagement primero
+	const mgmtDeps = extractDependencies(content, 'dependencyManagement', properties, bomVersions);
 	for (const dep of mgmtDeps) {
-		if (!seen.has(dep.name)) {
-			seen.add(dep.name);
-			results.push(dep);
-		}
+		if (!seen.has(dep.name)) { seen.add(dep.name); results.push(dep); }
 	}
 
-	// Procesar dependencies (prioridad más alta)
-	const directDeps = extractDependencies(content, 'dependencies', properties);
+	// dependencies directas (prioridad más alta)
+	const directDeps = extractDependencies(content, 'dependencies', properties, bomVersions);
 	for (const dep of directDeps) {
 		if (seen.has(dep.name)) {
-			// Sobreescribir la entrada de dependencyManagement con la directa
 			const idx = results.findIndex(r => r.name === dep.name);
 			if (idx !== -1) { results[idx] = dep; }
 		} else {
@@ -68,18 +72,155 @@ export function parsePomXml(filePath: string): ParsedPackage[] {
 }
 
 /**
- * Extrae el mapa de <properties> del pom.xml, incluyendo project.version.
+ * Versión síncrona original — para compatibilidad con los tests unitarios.
  */
+export function parsePomXml(filePath: string): ParsedPackage[] {
+	let content: string;
+	try {
+		content = fs.readFileSync(filePath, 'utf8');
+	} catch {
+		return [];
+	}
+
+	const properties = extractProperties(content);
+	const seen       = new Set<string>();
+	const results: ParsedPackage[] = [];
+	const emptyBom   = new Map<string, string>();
+
+	const mgmtDeps = extractDependencies(content, 'dependencyManagement', properties, emptyBom);
+	for (const dep of mgmtDeps) {
+		if (!seen.has(dep.name)) { seen.add(dep.name); results.push(dep); }
+	}
+
+	const directDeps = extractDependencies(content, 'dependencies', properties, emptyBom);
+	for (const dep of directDeps) {
+		if (seen.has(dep.name)) {
+			const idx = results.findIndex(r => r.name === dep.name);
+			if (idx !== -1) { results[idx] = dep; }
+		} else {
+			seen.add(dep.name);
+			results.push(dep);
+		}
+	}
+
+	return results;
+}
+
+// ─── BOM resolution ───────────────────────────────────────────────────────────
+
+interface ParentRef {
+	groupId: string;
+	artifactId: string;
+	version: string;
+}
+
+/**
+ * Extrae el <parent> del pom.xml y lo convierte en una referencia de BOM
+ * si es un parent de Spring Boot (spring-boot-starter-parent →
+ * spring-boot-dependencies, que es el BOM real con las versiones).
+ *
+ * También soporta otros parents comunes que son BOMs:
+ * - org.springframework.boot:spring-boot-starter-parent → spring-boot-dependencies
+ * - org.springframework.cloud:spring-cloud-dependencies (directo)
+ */
+function extractParentBom(content: string, properties: Map<string, string>): ParentRef | null {
+	const parentBlock = extractBlock(content, 'parent');
+	if (!parentBlock) { return null; }
+
+	const groupId    = extractTag(parentBlock, 'groupId');
+	const artifactId = extractTag(parentBlock, 'artifactId');
+	const rawVersion = extractTag(parentBlock, 'version') ?? '';
+
+	if (!groupId || !artifactId || !rawVersion) { return null; }
+
+	const version = resolveProperty(rawVersion, properties);
+	if (!version || version.includes('${')) { return null; }
+
+	// Spring Boot starter parent → usar spring-boot-dependencies como BOM
+	if (groupId === 'org.springframework.boot' && artifactId === 'spring-boot-starter-parent') {
+		return { groupId: 'org.springframework.boot', artifactId: 'spring-boot-dependencies', version };
+	}
+
+	// Otros parents que son BOMs directamente
+	if (artifactId.endsWith('-dependencies') || artifactId.endsWith('-bom')) {
+		return { groupId, artifactId, version };
+	}
+
+	return null;
+}
+
+/**
+ * Descarga el POM de un BOM desde Maven Central y extrae versiones de
+ * su sección <dependencyManagement>.
+ */
+async function resolveBomVersions(
+	groupId: string,
+	artifactId: string,
+	version: string
+): Promise<Map<string, string>> {
+	const cacheKey = `${groupId}:${artifactId}:${version}`;
+	if (bomCache.has(cacheKey)) {
+		return bomCache.get(cacheKey)!;
+	}
+
+	const map = new Map<string, string>();
+
+	try {
+		const groupPath = groupId.replace(/\./g, '/');
+		const pomUrl    = `https://repo1.maven.org/maven2/${groupPath}/${artifactId}/${version}/${artifactId}-${version}.pom`;
+
+		const response = await fetch(pomUrl, {
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.4 (https://scanreq.com)' }
+		});
+
+		if (!response.ok) {
+			bomCache.set(cacheKey, map);
+			return map;
+		}
+
+		const xml = await response.text();
+
+		const dmStart = xml.indexOf('<dependencyManagement>');
+		const dmEnd   = xml.indexOf('</dependencyManagement>');
+		if (dmStart === -1 || dmEnd === -1) {
+			bomCache.set(cacheKey, map);
+			return map;
+		}
+
+		const dmSection = xml.slice(dmStart, dmEnd + '</dependencyManagement>'.length);
+		const depRe = /<dependency>([\s\S]*?)<\/dependency>/g;
+		let dm: RegExpExecArray | null;
+
+		while ((dm = depRe.exec(dmSection)) !== null) {
+			const block         = dm[1];
+			const depGroupId    = extractTag(block, 'groupId');
+			const depArtifactId = extractTag(block, 'artifactId');
+			const depVersion    = extractTag(block, 'version');
+
+			if (depGroupId && depArtifactId && depVersion) {
+				const fullName = `${depGroupId}:${depArtifactId}`;
+				map.set(fullName, depVersion);
+				map.set(depArtifactId, depVersion);
+			}
+		}
+	} catch {
+		// Si falla la descarga, devolver mapa vacío
+	}
+
+	bomCache.set(cacheKey, map);
+	return map;
+}
+
+// ─── Helpers internos ─────────────────────────────────────────────────────────
+
 function extractProperties(content: string): Map<string, string> {
 	const map = new Map<string, string>();
 
-	// project.version desde el bloque raíz <version> (fuera de <dependencies>)
 	const projectVersionMatch = content.match(/<project[^>]*>[\s\S]*?<version>\s*([^<]+)\s*<\/version>/);
 	if (projectVersionMatch) {
 		map.set('project.version', projectVersionMatch[1].trim());
 	}
 
-	// Bloque <properties>
 	const propsBlock = extractBlock(content, 'properties');
 	if (propsBlock) {
 		const propRe = /<([a-zA-Z0-9._\-]+)>\s*([^<]+)\s*<\/\1>/g;
@@ -92,17 +233,13 @@ function extractProperties(content: string): Map<string, string> {
 	return map;
 }
 
-/**
- * Extrae todas las dependencias de una sección (dependencies o dependencyManagement).
- * En dependencyManagement, el XML es <dependencyManagement><dependencies>...</dependencies></dependencyManagement>
- */
 function extractDependencies(
 	content: string,
 	section: 'dependencies' | 'dependencyManagement',
-	properties: Map<string, string>
+	properties: Map<string, string>,
+	bomVersions: Map<string, string>
 ): ParsedPackage[] {
 	const results: ParsedPackage[] = [];
-
 	let searchIn = content;
 
 	if (section === 'dependencyManagement') {
@@ -110,12 +247,9 @@ function extractDependencies(
 		if (!mgmtBlock) { return results; }
 		searchIn = mgmtBlock;
 	} else {
-		// Para <dependencies> directas, excluir el bloque <dependencyManagement>
-		// para no procesar las mismas dos veces con la misma regex
 		searchIn = content.replace(/<dependencyManagement[\s\S]*?<\/dependencyManagement>/g, '');
 	}
 
-	// Extraer cada bloque <dependency>...</dependency>
 	const depRe = /<dependency>([\s\S]*?)<\/dependency>/g;
 	let match: RegExpExecArray | null;
 
@@ -130,13 +264,17 @@ function extractDependencies(
 		const scope      = extractTag(block, 'scope') ?? 'compile';
 		const type       = extractTag(block, 'type') ?? 'jar';
 
-		// Ignorar dependencias de tipo pom con scope import (son BOMs — no son librerías directas)
 		if (type === 'pom' && scope === 'import') { continue; }
 
-		// Resolver ${property}
-		const version = resolveProperty(rawVersion, properties);
-		const name    = `${groupId}:${artifactId}`;
+		let version = resolveProperty(rawVersion, properties);
 
+		// Si no hay versión, buscar en el BOM del parent
+		if (!version) {
+			const fullName = `${groupId}:${artifactId}`;
+			version = bomVersions.get(fullName) ?? bomVersions.get(artifactId) ?? '';
+		}
+
+		const name = `${groupId}:${artifactId}`;
 		results.push({
 			name,
 			groupId,
@@ -151,39 +289,25 @@ function extractDependencies(
 	return results;
 }
 
-/**
- * Extrae el contenido de un bloque XML dado su tag name.
- * Maneja anidamiento simple.
- */
 function extractBlock(content: string, tag: string): string | null {
 	const open  = new RegExp(`<${tag}(?:\\s[^>]*)?>`, 'g');
 	const close = new RegExp(`<\\/${tag}>`, 'g');
-
 	open.lastIndex = 0;
 	const openMatch = open.exec(content);
 	if (!openMatch) { return null; }
-
 	const start = openMatch.index + openMatch[0].length;
 	close.lastIndex = start;
 	const closeMatch = close.exec(content);
 	if (!closeMatch) { return null; }
-
 	return content.slice(start, closeMatch.index);
 }
 
-/**
- * Extrae el texto de un tag simple dentro de un bloque.
- */
 function extractTag(block: string, tag: string): string | null {
 	const re = new RegExp(`<${tag}>\\s*([^<]+)\\s*<\\/${tag}>`);
 	const m  = block.match(re);
 	return m ? m[1].trim() : null;
 }
 
-/**
- * Resuelve ${property.name} usando el mapa de properties.
- * Si no se puede resolver, devuelve la cadena original.
- */
 function resolveProperty(value: string, properties: Map<string, string>): string {
 	if (!value) { return value; }
 	return value.replace(/\$\{([^}]+)\}/g, (_, key) => {
@@ -191,14 +315,10 @@ function resolveProperty(value: string, properties: Map<string, string>): string
 	});
 }
 
-/**
- * Una versión es exacta si es un número semver puro (sin ${...} sin resolver,
- * sin rangos Maven [1,2), sin SNAPSHOT, sin LATEST/RELEASE).
- */
 function isExactVersion(version: string): boolean {
 	if (!version) { return false; }
-	if (version.includes('${')) { return false; }           // property no resuelta
-	if (version.startsWith('[') || version.startsWith('(')) { return false; } // rango Maven
+	if (version.includes('${')) { return false; }
+	if (version.startsWith('[') || version.startsWith('(')) { return false; }
 	if (version.toUpperCase().includes('SNAPSHOT')) { return false; }
 	if (version === 'LATEST' || version === 'RELEASE') { return false; }
 	return /^\d[\d.]*$/.test(version);

@@ -18,7 +18,7 @@ async function fetchNpmData(packageName: string): Promise<NpmPackageData | null>
 	try {
 		const response = await fetch(
 			`https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
-			{ headers: { 'User-Agent': 'scanreq-vscode/2.2' } }
+			{ headers: { 'User-Agent': 'scanreq-vscode/2.4' } }
 		);
 		if (!response.ok) {
 			npmCache.set(key, null);
@@ -36,6 +36,7 @@ async function fetchNpmData(packageName: string): Promise<NpmPackageData | null>
 function parseSemverRange(spec: string): { op: string; version: string } | null {
 	const s = spec.trim();
 	// Soporta: ^1.2.3, ~1.2.3, >=1.2.3, <=1.2.3, >1.2.3, <1.2.3, =1.2.3, 1.2.3, *
+	// También con espacio: ">= 16", "< 19.0.0"
 	const match = s.match(/^(\^|~|>=|<=|>|<|=)?\s*(\d[\d.]*)$/);
 	if (!match) { return null; }
 	return { op: match[1] ?? '=', version: match[2] };
@@ -84,14 +85,47 @@ function satisfiesSemver(installed: string, op: string, specVersion: string): bo
 	}
 }
 
+/**
+ * Normaliza un spec de peerDependency separando los términos AND correctamente.
+ *
+ * El problema: ">= 16" (con espacio entre operador y versión) al hacer split(/\s+/)
+ * produce ['>=', '16'] — dos tokens — en lugar de un spec único ">= 16".
+ * Esto hace que parseSemverRange('>=') devuelva null y parseSemverRange('16')
+ * devuelva { op: '=', version: '16' }, lo que causa falsos positivos de conflicto.
+ *
+ * La solución: reagrupar tokens consecutivos que son (operador, versión) en un único string.
+ */
+function normalizeAndParts(part: string): string[] {
+	// Dividir por espacios preservando operadores pegados a versiones
+	const tokens = part.trim().split(/\s+/);
+	const normalized: string[] = [];
+
+	let i = 0;
+	while (i < tokens.length) {
+		const token = tokens[i];
+		// Si el token es solo un operador (>=, <=, >, <, =, !=) sin versión pegada
+		const opOnly = /^(>=|<=|!=|>|<|=)$/.test(token);
+		if (opOnly && i + 1 < tokens.length && /^\d/.test(tokens[i + 1])) {
+			// Combinar operador + versión siguiente: ">= 16" → ">=16"
+			normalized.push(token + tokens[i + 1]);
+			i += 2;
+		} else {
+			normalized.push(token);
+			i++;
+		}
+	}
+
+	return normalized;
+}
+
 function checkSatisfied(installedVersion: string, spec: string): boolean {
 	if (spec === '*' || spec === '') { return true; }
 
 	// Rangos compuestos separados por || (e.g. "^16.0.0 || ^17.0.0 || ^18.0.0")
 	const orParts = spec.split('||').map(s => s.trim());
 	return orParts.some(part => {
-		// Rangos compuestos con espacio (e.g. ">=16.0.0 <19.0.0")
-		const andParts = part.trim().split(/\s+/);
+		// Normalizar primero para manejar ">= 16" con espacio
+		const andParts = normalizeAndParts(part);
 		return andParts.every(p => {
 			const parsed = parseSemverRange(p);
 			if (!parsed) { return true; }

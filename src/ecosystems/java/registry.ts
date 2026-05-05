@@ -26,7 +26,8 @@ export async function checkMaven(
 		name,
 		installedVersion,
 		latestVersion: 'Not found',
-		upToDate: false,
+		// Si la versión es exacta y no encontramos en el registry, no es un problema real
+		upToDate: exactVersion && installedVersion !== 'unknown',
 		exactVersion,
 		vulnerabilities: [],
 		detectedByTool: false,
@@ -146,6 +147,8 @@ function isStableSemver(version: string): boolean {
 	if (lower.includes('beta'))     { return false; }
 	if (lower.includes('-rc'))      { return false; }
 	if (lower.includes('-m') && /\-m\d/i.test(lower)) { return false; } // milestone: -M1, -M2
+	if (lower.includes('-ea'))      { return false; } // early access: 25-ea+21
+	if (lower.includes('+'))        { return false; } // build metadata: 25-ea+21
 	if (version === 'LATEST' || version === 'RELEASE') { return false; }
 	// Debe empezar por dígito
 	return /^\d/.test(version);

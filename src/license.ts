@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 const LICENSE_KEY = 'scanreq.licenseToken';
-const ADMIN_TOKEN = '***REMOVED***';
+const ADMIN_TOKEN = 'SCANREQ-ADMIN-2025-MASTER';
 const BACKEND_URL = 'https://scanreq.com/api/validate-license';
 
 export interface LicenseStatus {

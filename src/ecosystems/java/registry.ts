@@ -61,6 +61,13 @@ export async function checkMaven(
 			}
 		}
 
+		// Si la versión instalada es mayor que la "latest" del registro,
+		// el paquete está al día (el registro puede estar desactualizado para releases muy recientes).
+		// Evita sugerir downgrades.
+		if (installedVersion !== 'unknown' && compareSemver(installedVersion, latestVersion) > 0) {
+			latestVersion = installedVersion;
+		}
+
 		const upToDate        = installedVersion !== 'unknown' && installedVersion === latestVersion;
 		const majorVersionJump = calcMajorVersionJump(installedVersion, latestVersion);
 

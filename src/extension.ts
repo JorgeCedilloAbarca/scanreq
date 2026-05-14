@@ -166,7 +166,7 @@ export function activate(context: vscode.ExtensionContext) {
 				prompt: 'Introduce tu token de licencia',
 				placeHolder: 'SCANREQ-PRO-XXXX-XXXX-XXXX',
 				ignoreFocusOut: true,
-				password: false
+				password: true
 			});
 			if (!token) { return; }
 			const result = await activateLicense(context, token);

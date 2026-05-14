@@ -43,7 +43,7 @@ const ECOSYSTEM_REGISTRY_LINKS: Record<EcosystemId, (name: string) => string> = 
 	python: (n) => `https://pypi.org/project/${encodeURIComponent(n.replace(/\[.*?\]/g, ''))}/`,
 	node:   (n) => `https://www.npmjs.com/package/${encodeURIComponent(n)}`,
 	rust:   (n) => `https://crates.io/crates/${encodeURIComponent(n)}`,
-	go:     (n) => `https://pkg.go.dev/${n}`,
+	go:     (n) => `https://pkg.go.dev/${encodeURIComponent(n)}`,
 	php:    (n) => `https://packagist.org/packages/${encodeURIComponent(n)}`,
 	ruby:   (n) => `https://rubygems.org/gems/${encodeURIComponent(n)}`,
 	java:   (n) => `https://search.maven.org/artifact/${encodeURIComponent(n.replace(':', '/'))}`,
@@ -664,38 +664,51 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			ScanReq · <a href="https://scanreq.com" style="color:inherit;">scanreq.com</a>
 			${isPro ? ` · ${locale === 'es' ? 'Plan Pro activo' : 'Pro plan active'}` : ` · <a href="https://scanreq.com/recover" style="color:inherit;">${locale === 'es' ? '¿Perdiste tu token?' : 'Lost your token?'}</a>`}
 		</div>
-		<!-- El prompt se almacena en un data attribute en Base64.
-		     Esto evita cualquier inyección en atributos HTML o scripts inline. -->
-		${isPro ? `<div id="aiPromptData" data-prompt="${aiPromptB64}" style="display:none;" aria-hidden="true"></div>` : ''}
 		<script>
-			function copyPrompt() {
-				const promptEl = document.getElementById('aiPromptData');
-				if (!promptEl) { return; }
-				const b64 = promptEl.dataset.prompt || '';
-				const aiPrompt = b64 ? new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0))) : '';
-				navigator.clipboard.writeText(aiPrompt).then(() => {
-					const btn = document.getElementById('copyPromptBtn');
-					const feedback = document.getElementById('copyFeedback');
-					btn.style.opacity = '0.6';
-					feedback.classList.add('visible');
-					setTimeout(() => {
-						btn.style.opacity = '1';
-						feedback.classList.remove('visible');
-					}, 2000);
-				}).catch(() => {
-					const ta = document.createElement('textarea');
-					ta.value = aiPrompt;
-					ta.style.position = 'fixed';
-					ta.style.opacity = '0';
-					document.body.appendChild(ta);
-					ta.select();
-					document.execCommand('copy');
-					document.body.removeChild(ta);
-					const feedback = document.getElementById('copyFeedback');
-					feedback.classList.add('visible');
-					setTimeout(() => feedback.classList.remove('visible'), 2000);
-				});
-			}
+			// Fix #11: el prompt se guarda en una variable JS en memoria (closure),
+			// NO en un data-attribute del DOM. Así no es accesible vía
+			// document.getElementById().dataset desde una posible inyección XSS.
+			(function () {
+				${isPro ? `const _b64 = ${JSON.stringify(aiPromptB64)};` : 'const _b64 = "";'}
+
+				window.copyPrompt = function copyPrompt() {
+					if (!_b64) { return; }
+					const aiPrompt = new TextDecoder().decode(
+						Uint8Array.from(atob(_b64), c => c.charCodeAt(0))
+					);
+					const showFeedback = function () {
+						const btn      = document.getElementById('copyPromptBtn');
+						const feedback = document.getElementById('copyFeedback');
+						if (btn)      { btn.style.opacity = '0.6'; }
+						if (feedback) { feedback.classList.add('visible'); }
+						setTimeout(function () {
+							if (btn)      { btn.style.opacity = '1'; }
+							if (feedback) { feedback.classList.remove('visible'); }
+						}, 2000);
+					};
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						navigator.clipboard.writeText(aiPrompt).then(showFeedback).catch(function () {
+							const ta = document.createElement('textarea');
+							ta.value = aiPrompt;
+							ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
+							document.body.appendChild(ta);
+							ta.select();
+							document.execCommand('copy');
+							document.body.removeChild(ta);
+							showFeedback();
+						});
+					} else {
+						const ta = document.createElement('textarea');
+						ta.value = aiPrompt;
+						ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
+						document.body.appendChild(ta);
+						ta.select();
+						document.execCommand('copy');
+						document.body.removeChild(ta);
+						showFeedback();
+					}
+				};
+			})();
 		</script>
 	</body>
 	</html>`;

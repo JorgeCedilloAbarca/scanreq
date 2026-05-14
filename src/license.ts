@@ -5,8 +5,16 @@ const IS_ADMIN_KEY       = 'scanreq.isAdmin';
 const LAST_VALIDATED_KEY = 'scanreq.lastValidated';
 const BACKEND_URL        = 'https://scanreq.com/api/validate-license';
 
-// Revalidar cada 7 días (en milisegundos)
-const REVALIDATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+// NOTA DE SEGURIDAD: VS Code almacena globalState en texto plano en el perfil del usuario
+// (~/.vscode/globalStorage/trustdev.scanreq/ en macOS/Linux,
+//  %APPDATA%\Code\User\globalStorage\trustdev.scanreq\ en Windows).
+// No actives el Plan Pro en máquinas compartidas, CI/CD, o entornos multi-usuario
+// donde otros procesos puedan acceder al filesystem del perfil de VS Code.
+
+// Revalidar cada 24 horas (en milisegundos).
+// 7 días era demasiado: un token robado o un chargeback mantenían acceso Pro
+// una semana entera. 24 h es un compromiso razonable entre UX offline y seguridad.
+const REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface LicenseStatus {
 	active: boolean;
@@ -25,7 +33,7 @@ export function getLicenseStatus(context: vscode.ExtensionContext): LicenseStatu
 
 /**
  * Revalidación silenciosa en background.
- * Se llama al arrancar la extensión si han pasado más de 7 días desde la última validación.
+ * Se llama al arrancar la extensión si han pasado más de 24 horas desde la última validación.
  * - Si el backend confirma el token → actualiza el timestamp, sin notificación.
  * - Si el backend rechaza el token → borra la licencia y notifica al usuario.
  * - Si no hay conexión → no hace nada, reintentará en el próximo arranque.
@@ -41,7 +49,7 @@ export async function revalidateLicenseIfNeeded(
 
 	if (now - lastValidated < REVALIDATION_INTERVAL_MS) { return; }
 
-	// Han pasado más de 7 días — revalidar silenciosamente
+	// Han pasado más de 24 horas — revalidar silenciosamente
 	try {
 		const response = await fetch(BACKEND_URL, {
 			method: 'POST',

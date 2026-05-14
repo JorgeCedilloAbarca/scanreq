@@ -2,6 +2,12 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.5.3] - 2026-05-14
+
+### Changed
+- **README rewritten** — new marketing-focused structure: problem framing, clear Free vs Pro comparison, phased update table explained, price visible, and activation steps. Replaces the previous purely technical documentation.
+- **Screenshots added** — three screenshots from real open-source GitHub projects: Node.js scan with CVEs on axios, Gradle scan with commons-io CVE, and Pro compatibility analysis with 3-phase migration table.
+
 ## [2.5.2] - 2026-05-14
 
 ### Fixed

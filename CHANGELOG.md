@@ -2,6 +2,22 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.5.2] - 2026-05-14
+
+### Fixed
+- **Maven: `-GA`, `-Final`, `-jre11` ahora son versiones exactas** — `isExactVersion()` usaba una regex que solo aceptaba dígitos y puntos, rechazando sufijos de release válidos en Maven. `3.29.2-GA` se mostraba como `∼ Sin fijar` y no se analizaban sus CVEs.
+- **Maven BOM: versiones internas del BOM ahora se resuelven** — `resolveBomVersions()` descargaba el BOM de Spring Boot pero no extraía sus `<properties>`. Dependencias como `postgresql` o `h2` sin versión declarada en el `pom.xml` se mostraban como `∼${postgresql.version}` en lugar de la versión real.
+- **Maven: label según motivo de no disponibilidad** — en lugar de "Not found" para todos los casos, ahora se muestra "Versión dinámica" (SNAPSHOT), "Repositorio privado" (pom con `<repositories>` externos) o "No disponible" (no encontrado en Maven Central). Los paquetes con estos labels no generan entradas falsas en las fases ni badge `↑`.
+- **Todas las fases: major jump siempre va a Fase 3** — `calcMigrationRisk` mezclaba CVEs y major jump en el mismo nivel `medium`. Ahora cualquier salto de major va a Fase 3 independientemente de si tiene CVEs.
+- **Fases: `∼` en versión actual para paquetes no exactos** — la columna "Actual" de las fases ahora muestra `∼X.Y.Z` para paquetes con versión no fijada, consistente con la tabla principal.
+- **Columna Versión: muestra actualización disponible para paquetes no exactos** — cuando `latestVersion` es conocida pero `exactVersion: false`, se muestra `↑ X.Y.Z disponible (∼)` en lugar de `∼ Sin fijar`, alineado con las sugerencias de las fases.
+- **Prompt IA: inyección de contenido en el panel** — CVE summaries con backticks (como el de `wrangler pages deploy`) rompían el template literal del script inline, volcando el prompt como texto visible en el panel. El prompt ahora se codifica en Base64 (`Buffer`/`atob`) y se almacena en un `data-attribute`, eliminando cualquier posibilidad de inyección.
+
+### Added
+- **Fase `⚠ Sin parche disponible`** — paquetes al día según el registry pero con CVEs activos aparecen en una nueva fase. Si OSV reporta `fixedVersion`, se sugiere esa versión (verificando que exista en el registry para ese artefacto). Si no existe o no hay `fixedVersion`, se muestra "Sin parche conocido — evalúa mitigar o reemplazar".
+- **OSV `fixedVersion`** — la consulta a OSV ahora extrae la versión de fix de cada CVE desde `affected[].ranges[].events`. Disponible en todos los ecosistemas.
+- **Subtítulo colapsable en monorepos** — cuando hay más de 3 archivos escaneados, el subtítulo se convierte en un `<details>` colapsable que muestra "N archivos escaneados (click para ver)" y lista las rutas al expandir.
+
 ## [2.5.1] - 2026-05-14
 
 ### Security

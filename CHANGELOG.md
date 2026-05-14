@@ -2,6 +2,22 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.5.1] - 2026-05-14
+
+### Security
+- **Go package links: XSS/open-redirect fix** — Go was the only ecosystem where package names were not encoded in registry URLs. A malicious `go.mod` with a package named `javascript:...` could inject executable code into the webview. Fixed with `encodeURIComponent`.
+- **CVE ordering before truncation** — CVEs are now sorted by severity (CRITICAL → HIGH → MEDIUM → LOW) before slicing. Previously, a CRITICAL could be hidden behind MEDIUMs if OSV returned them in that order. Limit raised from 3 to 5.
+- **OSV `fixedVersion` now targets the correct patch branch** — the previous implementation always returned the globally highest `fixed` version, which could recommend a major branch upgrade (e.g. 2.3.1) when the user's installed version (e.g. 1.8.0) had a patch in its own branch (1.9.5). Now correctly filters OSV ranges by `introduced ≤ installed < fixed` and returns the minimum applicable fix.
+- **OSV query timeout** — all OSV queries now abort after 10 seconds via `AbortController`. Previously, a slow or DNS-intercepted OSV endpoint would hang the entire scan indefinitely.
+- **OSV 4xx/5xx logged distinctly from no-CVEs** — a 429 or 500 from OSV no longer silently returns `[]`, which was indistinguishable from a confirmed clean result. Errors are now logged via `console.warn`.
+- **License token input masked** — the token input field now uses `password: true`. Previously the token was visible in plaintext while typing, exposing it in screencasts or pair programming sessions.
+- **License revalidation interval reduced: 7 days → 24 hours** — a revoked token (chargeback, theft, token sharing) previously kept Pro access for up to 168 hours. Now capped at 24 hours.
+- **`globalState` storage limitation documented** — VS Code stores extension state in plaintext on disk. Added explicit comment with filesystem paths so the risk is visible in code reviews. Users should not activate Pro on shared machines or CI environments.
+- **AI prompt moved from DOM to JS closure** — the base64-encoded AI prompt was stored in a `data-prompt` DOM attribute, readable by any JS running in the webview via `getElementById().dataset`. It now lives in an IIFE closure, invisible to DOM traversal.
+
+### Fixed
+- **Unverified CVE badge** — packages with non-exact version specifiers now show `⚠ No verificado` / `⚠ Unverified` (orange) instead of the neutral grey `— No analizado` / `— Not analyzed`. The new badge includes a tooltip explaining that the version is not pinned and CVEs cannot be verified, with actionable advice.
+
 ## [2.5.0] - 2026-05-14
 
 ### Security

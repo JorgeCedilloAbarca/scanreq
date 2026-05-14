@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 
-const LICENSE_KEY = 'scanreq.licenseToken';
-const ADMIN_TOKEN = 'SCANREQ-ADMIN-2025-MASTER';
-const BACKEND_URL = 'https://scanreq.com/api/validate-license';
+const LICENSE_KEY  = 'scanreq.licenseToken';
+const BACKEND_URL  = 'https://scanreq.com/api/validate-license';
 
 export interface LicenseStatus {
 	active: boolean;
@@ -15,11 +14,9 @@ export function getLicenseStatus(context: vscode.ExtensionContext): LicenseStatu
 	if (!token) {
 		return { active: false, token: null, isAdmin: false };
 	}
-	if (token === ADMIN_TOKEN) {
-		return { active: true, token, isAdmin: true };
-	}
-	// Token guardado pero aún no revalidado en esta sesión — se considera activo
-	// La validación real ocurre en activateLicense()
+	// Token guardado pero aún no revalidado en esta sesión — se considera activo.
+	// La validación real ocurre en activateLicense().
+	// isAdmin se determina únicamente por el backend (campo data.isAdmin).
 	return { active: true, token, isAdmin: false };
 }
 
@@ -33,13 +30,7 @@ export async function activateLicense(
 		return { success: false, message: 'El token no puede estar vacío.' };
 	}
 
-	// Token ADMIN — validación local, nunca llama al backend
-	if (trimmed === ADMIN_TOKEN) {
-		await context.globalState.update(LICENSE_KEY, trimmed);
-		return { success: true, message: 'Licencia Admin activada correctamente.' };
-	}
-
-	// Validación contra backend
+	// Validación contra backend — todos los tokens pasan por aquí, sin excepción.
 	try {
 		const response = await fetch(BACKEND_URL, {
 			method: 'POST',
@@ -51,7 +42,13 @@ export async function activateLicense(
 			const data = await response.json() as any;
 			if (data.valid) {
 				await context.globalState.update(LICENSE_KEY, trimmed);
-				return { success: true, message: 'Licencia Pro activada correctamente. ¡Bienvenido!' };
+				// El backend puede devolver data.isAdmin = true para tokens especiales.
+				// Se guarda en globalState para usarlo en la sesión actual.
+				await context.globalState.update('scanreq.isAdmin', data.isAdmin === true);
+				const welcome = data.isAdmin
+					? 'Licencia Admin activada correctamente.'
+					: 'Licencia Pro activada correctamente. ¡Bienvenido!';
+				return { success: true, message: welcome };
 			} else {
 				return { success: false, message: data.message ?? 'Token inválido o ya usado.' };
 			}
@@ -70,4 +67,5 @@ export async function activateLicense(
 
 export async function deactivateLicense(context: vscode.ExtensionContext): Promise<void> {
 	await context.globalState.update(LICENSE_KEY, undefined);
+	await context.globalState.update('scanreq.isAdmin', undefined);
 }

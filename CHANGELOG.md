@@ -2,6 +2,36 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.5.0] - 2026-05-14
+
+### Security
+- **Removed hardcoded admin token** — admin token eliminated from source code and git history; license validation now goes entirely through the backend for all tokens
+- **XSS prevention in webview** — added `escapeHtml()` sanitization for all external data (package names, versions, CVE summaries, file paths) before rendering in the panel
+- **Content Security Policy** — added strict CSP header to the webview HTML (`default-src 'none'`, `connect-src 'none'`) blocking any network requests from the panel
+- **Periodic license revalidation** — Pro licenses are silently revalidated against the backend every 7 days; revoked licenses (e.g. chargebacks) are automatically deactivated without user action
+- **Rate limiting on license validation** — backend endpoint `/api/validate-license` now enforces a limit of 10 attempts per IP per hour via Cloudflare KV
+- **Symlink protection in file walker** — symbolic links are now ignored during workspace scanning to prevent path traversal outside the workspace
+- **Reduced timeouts and output limits** — `pip show` reduced from 10s to 5s, `pip list` from 15s to 10s, `go mod graph` from 30s to 15s; `maxBuffer` limits added to all subprocess calls
+- **Package name validation** — pip package names are validated against `/^[a-zA-Z0-9._-]+$/` before being passed to subprocess calls
+- **Registry URLs hardened** — all registry links now use `encodeURIComponent()` on package names
+
+### Added
+- **Unpatched CVE phase** — new `⚠ No patch available` phase in the safe update table for packages with active CVEs but no known patched version
+- **Unpatched version status** — new `∼ Unpinned` badge logic improved to show latest available version even for non-exact specifiers when a registry version is known
+
+### Fixed
+- Gradle BOM resolution — `platform()` and `org.springframework.boot` plugin detected and resolved via `repo1.maven.org`
+- Maven parent BOM resolution — `parsePomXmlAsync()` detects `spring-boot-starter-parent` and downloads `spring-boot-dependencies`
+- Maven: no downgrade — if `installedVersion > latestVersion`, package is marked as `upToDate`
+- Maven: pre-release filter — milestones (`-M1`), RC, alpha, beta, early access (`-ea`) and build metadata (`+`) filtered from `latestVersion`
+- Maven: not found upToDate — when registry returns no result and version is exact, `upToDate: true`
+- Node: false positive `>= 16` — `normalizeAndParts()` correctly groups operator and version separated by space
+- Node: lockfile resolution in monorepos — `nodetools` accepts `packageDir`, looks for lockfiles in the `package.json` folder
+- Monorepo support — recursive `fs.readdirSync` walk with `MAX_DEPTH=5` and complete `EXCLUDE_DIRS`
+- `onStartupFinished` activation — works in any workspace regardless of files in root
+- `$(sync~spin)` badge — progress badge shown immediately while scanning
+- `scanInProgress` flag — prevents simultaneous scans
+
 ## [2.4.1] - 2026-05-04
 
 ### Added

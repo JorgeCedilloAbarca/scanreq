@@ -40,6 +40,8 @@ function findDependencyFiles(workspaceRoot: string): Array<{ filePath: string; f
 		}
 
 		for (const entry of entries) {
+			// Ignorar symlinks — evita path traversal hacia fuera del workspace
+			if (entry.isSymbolicLink()) { continue; }
 			if (entry.isDirectory()) {
 				if (EXCLUDE_DIRS.has(entry.name) || entry.name.startsWith('.')) { continue; }
 				walk(path.join(dir, entry.name), depth + 1);

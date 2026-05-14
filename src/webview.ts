@@ -312,11 +312,14 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 				? `<span class="badge outdated">↑ ${safeLatest} ${t('badgeAvailable')}</span>${majorBadge}<span style="font-size:10px;color:var(--vscode-descriptionForeground);margin-left:4px;" title="${locale === 'es' ? 'Versión instalada no fijada' : 'Installed version not pinned'}">(∼)</span>`
 				: `<span class="badge approx">${locale === 'es' ? '∼ Sin fijar' : '∼ Unpinned'}</span>`;
 
+		// Fix #3: "— No analizado" era ambiguo — el usuario podía interpretarlo como
+		// "sin riesgo". Ahora es un badge naranja explícito que deja claro que la
+		// versión instalada no está fijada y por tanto los CVEs no han sido verificados.
 		const securityBadge = pkg.vulnerabilities.length > 0
 			? `<span class="badge vuln">⚠ ${pkg.vulnerabilities.length} CVE${pkg.vulnerabilities.length > 1 ? 's' : ''}</span>`
 			: (pkg.exactVersion || pkg.detectedByTool)
 				? `<span class="badge safe">${t('badgeNoCVEs')}</span>`
-				: `<span class="badge unknown">${locale === 'es' ? '— No analizado' : '— Not analyzed'}</span>`;
+				: `<span class="badge unverified" title="${locale === 'es' ? 'Versión no fijada — no se puede verificar si esta versión exacta tiene CVEs conocidos. Fija la versión o activa el Plan Pro.' : 'Version not pinned — cannot verify if this exact version has known CVEs. Pin the version or activate the Pro plan.'}">⚠ ${locale === 'es' ? 'No verificado' : 'Unverified'}</span>`;
 
 		const vulnDetails = pkg.vulnerabilities.map(v => `
 			<div class="vuln-detail">
@@ -591,12 +594,14 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 				display: inline-block; padding: 2px 8px;
 				border-radius: 4px; font-size: 11px; font-weight: 600;
 			}
-			.badge.ok      { background: rgba(40,167,69,0.15); color: #28a745; }
-			.badge.outdated{ background: rgba(255,165,0,0.15); color: #ffa500; }
-			.badge.approx  { background: rgba(255,165,0,0.1); color: #ffcc77; }
-			.badge.vuln    { background: rgba(255,68,68,0.15); color: #ff4444; }
-			.badge.safe    { background: rgba(40,167,69,0.15); color: #28a745; }
-			.badge.unknown { background: rgba(147,112,219,0.15); color: #9370db; font-style: italic; }
+			.badge.ok         { background: rgba(40,167,69,0.15); color: #28a745; }
+			.badge.outdated   { background: rgba(255,165,0,0.15); color: #ffa500; }
+			.badge.approx     { background: rgba(255,165,0,0.1); color: #ffcc77; }
+			.badge.vuln       { background: rgba(255,68,68,0.15); color: #ff4444; }
+			.badge.safe       { background: rgba(40,167,69,0.15); color: #28a745; }
+			.badge.unknown    { background: rgba(147,112,219,0.15); color: #9370db; font-style: italic; }
+			/* Fix #3: badge naranja explícito para versiones no fijadas sin análisis CVE */
+			.badge.unverified { background: rgba(255,140,0,0.15); color: #ff8c00; border: 1px solid rgba(255,140,0,0.3); cursor: help; }
 			.badge.major   { background: rgba(255,100,50,0.15); color: #ff6432; border: 1px solid rgba(255,100,50,0.3); margin-left: 6px; font-size: 10px; }
 			.phase-header {
 				display: flex; align-items: baseline; gap: 10px;

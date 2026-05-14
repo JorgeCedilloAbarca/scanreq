@@ -2,6 +2,20 @@ import { ScanResult, PackageResult, CompatibilityReport, EcosystemId } from './e
 import { LicenseStatus } from './license';
 import { t, getLocale } from './i18n';
 
+// ─── Sanitización XSS ─────────────────────────────────────────────────────────
+// Escapa todos los caracteres que el navegador interpreta como HTML.
+// Debe aplicarse a CUALQUIER dato externo antes de insertarlo en el DOM:
+// nombres de paquetes, versiones, summaries de CVEs, rutas de archivos, etc.
+
+function escapeHtml(str: string): string {
+	return str
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+}
+
 // ─── Helpers visuales ─────────────────────────────────────────────────────────
 
 function getSeverityColor(severity: string): string {
@@ -26,14 +40,14 @@ const ECOSYSTEM_ICONS: Record<EcosystemId, string> = {
 };
 
 const ECOSYSTEM_REGISTRY_LINKS: Record<EcosystemId, (name: string) => string> = {
-	python: (n) => `https://pypi.org/project/${n.replace(/\[.*?\]/g, '')}/`,
-	node:   (n) => `https://www.npmjs.com/package/${n}`,
-	rust:   (n) => `https://crates.io/crates/${n}`,
+	python: (n) => `https://pypi.org/project/${encodeURIComponent(n.replace(/\[.*?\]/g, ''))}/`,
+	node:   (n) => `https://www.npmjs.com/package/${encodeURIComponent(n)}`,
+	rust:   (n) => `https://crates.io/crates/${encodeURIComponent(n)}`,
 	go:     (n) => `https://pkg.go.dev/${n}`,
-	php:    (n) => `https://packagist.org/packages/${n}`,
-	ruby:   (n) => `https://rubygems.org/gems/${n}`,
-	java:   (n) => `https://search.maven.org/artifact/${n.replace(':', '/')}`,
-	gradle: (n) => `https://search.maven.org/artifact/${n.replace(':', '/')}`,
+	php:    (n) => `https://packagist.org/packages/${encodeURIComponent(n)}`,
+	ruby:   (n) => `https://rubygems.org/gems/${encodeURIComponent(n)}`,
+	java:   (n) => `https://search.maven.org/artifact/${encodeURIComponent(n.replace(':', '/'))}`,
+	gradle: (n) => `https://search.maven.org/artifact/${encodeURIComponent(n.replace(':', '/'))}`,
 };
 
 // ─── Insights por ecosistema ──────────────────────────────────────────────────
@@ -54,7 +68,7 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 		if (criticalCVEs.length > 0) {
 			insights.push({
 				type: 'critical',
-				message: `⚠ Atención: ${criticalCVEs.map(p => p.name).join(', ')} ${criticalCVEs.length === 1 ? 'tiene' : 'tienen'} vulnerabilidades de severidad alta o crítica. Actualiza estos paquetes antes de desplegar en producción.`
+				message: `⚠ Atención: ${criticalCVEs.map(p => escapeHtml(p.name)).join(', ')} ${criticalCVEs.length === 1 ? 'tiene' : 'tienen'} vulnerabilidades de severidad alta o crítica. Actualiza estos paquetes antes de desplegar en producción.`
 			});
 		} else if (anyCVEs.length > 0) {
 			insights.push({
@@ -98,7 +112,7 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 		if (criticalCVEs.length > 0) {
 			insights.push({
 				type: 'critical',
-				message: `⚠ Warning: ${criticalCVEs.map(p => p.name).join(', ')} ${criticalCVEs.length === 1 ? 'has' : 'have'} high or critical severity vulnerabilities. Update before deploying to production.`
+				message: `⚠ Warning: ${criticalCVEs.map(p => escapeHtml(p.name)).join(', ')} ${criticalCVEs.length === 1 ? 'has' : 'have'} high or critical severity vulnerabilities. Update before deploying to production.`
 			});
 		} else if (anyCVEs.length > 0) {
 			insights.push({
@@ -161,8 +175,6 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 	}
 
 	if (conflicts.length === 0 && !toolUnavailable) {
-		// Solo mostrar "sin conflictos" si el ecosistema tiene análisis real (Python)
-		// Para ecosistemas sin análisis implementado el adapter devuelve conflicts vacío pero es por diseño
 		const hasRealAnalysis = report.conflicts !== undefined;
 		html += `<div class="insight insight-ok">
 			${locale === 'es'
@@ -188,11 +200,11 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 			<tbody>`;
 		for (const conflict of conflicts) {
 			html += `<tr>
-				<td><strong>${conflict.packageName}</strong></td>
-				<td><span class="badge vuln">${conflict.installedVersion}</span></td>
-				<td>${conflict.requiredBy}</td>
-				<td><code>${conflict.requiredSpec}</code></td>
-				<td class="recommendation">${conflict.recommendation}</td>
+				<td><strong>${escapeHtml(conflict.packageName)}</strong></td>
+				<td><span class="badge vuln">${escapeHtml(conflict.installedVersion)}</span></td>
+				<td>${escapeHtml(conflict.requiredBy)}</td>
+				<td><code>${escapeHtml(conflict.requiredSpec)}</code></td>
+				<td class="recommendation">${escapeHtml(conflict.recommendation)}</td>
 			</tr>`;
 		}
 		html += `</tbody></table>`;
@@ -203,7 +215,7 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 			${locale === 'es' ? '✓ Actualizaciones recomendadas' : '✓ Recommended updates'}
 		</h3>`;
 
-		const phases: Array<{ risk: 'low'|'medium'|'high'; label: string; note: string }> = [
+		const phases: Array<{ risk: 'low'|'medium'|'high'|'unpatched'; label: string; note: string }> = [
 			{
 				risk: 'low',
 				label: locale === 'es' ? 'Fase 1 — Riesgo bajo' : 'Phase 1 — Low risk',
@@ -218,6 +230,11 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 				risk: 'high',
 				label: locale === 'es' ? 'Fase 3 — Riesgo alto (Major)' : 'Phase 3 — High risk (Major)',
 				note: locale === 'es' ? 'Requiere revisión de código. Posibles breaking changes.' : 'Requires code review. Possible breaking changes.'
+			},
+			{
+				risk: 'unpatched',
+				label: locale === 'es' ? '⚠ Sin parche disponible' : '⚠ No patch available',
+				note: locale === 'es' ? 'CVEs activos sin versión parcheada conocida. Evalúa mitigar o reemplazar.' : 'Active CVEs with no known patched version. Consider mitigating or replacing.'
 			}
 		];
 
@@ -225,7 +242,6 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 			const phaseUpdates = safeUpdates
 				.filter(u => u.migrationRisk === phase.risk)
 				.sort((a, b) => {
-					// CVEs primero dentro de cada fase
 					const aHasCVE = a.reason.includes('CVE') ? 0 : 1;
 					const bHasCVE = b.reason.includes('CVE') ? 0 : 1;
 					return aHasCVE - bHasCVE;
@@ -242,17 +258,17 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 				<thead><tr>
 					<th>${locale === 'es' ? 'Paquete' : 'Package'}</th>
 					<th>${locale === 'es' ? 'Actual' : 'Current'}</th>
-					<th>${locale === 'es' ? 'Recomendado' : 'Recommended'}</th>
+					${phase.risk !== 'unpatched' ? `<th>${locale === 'es' ? 'Recomendado' : 'Recommended'}</th>` : ''}
 					<th>${locale === 'es' ? 'Motivo' : 'Reason'}</th>
 				</tr></thead>
 				<tbody>`;
 
 			for (const upd of phaseUpdates) {
 				html += `<tr>
-					<td><strong>${upd.packageName}</strong></td>
-					<td><span class="badge outdated">${upd.currentVersion}</span></td>
-					<td><span class="badge ok">${upd.recommendedVersion}</span></td>
-					<td>${upd.reason}</td>
+					<td><strong>${escapeHtml(upd.packageName)}</strong></td>
+					<td><span class="badge vuln">${escapeHtml(upd.currentVersion)}</span></td>
+					${phase.risk !== 'unpatched' ? `<td><span class="badge ok">${escapeHtml(upd.recommendedVersion)}</span></td>` : ''}
+					<td>${escapeHtml(upd.reason)}</td>
 				</tr>`;
 			}
 			html += `</tbody></table>`;
@@ -270,22 +286,31 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 	const getLinkFn = ECOSYSTEM_REGISTRY_LINKS[ecosystem];
 
 	const rows = packages.map(pkg => {
+		const safeName    = escapeHtml(pkg.name);
+		const safeInstalled = escapeHtml(pkg.installedVersion);
+		const safeLatest  = escapeHtml(pkg.latestVersion);
+
 		const versionLabel = pkg.detectedByTool
-			? `${pkg.installedVersion} <span class="tool-detected" title="${locale === 'es' ? 'Detectado automáticamente' : 'Auto-detected'}">auto</span>`
+			? `${safeInstalled} <span class="tool-detected" title="${locale === 'es' ? 'Detectado automáticamente' : 'Auto-detected'}">auto</span>`
 			: pkg.exactVersion
-				? pkg.installedVersion
-				: `<span style="color:#ffcc77;" title="${locale === 'es' ? 'Versión no exacta' : 'Non-exact version'}">∼${pkg.installedVersion}</span>`;
+				? safeInstalled
+				: `<span style="color:#ffcc77;" title="${locale === 'es' ? 'Versión no exacta' : 'Non-exact version'}">∼${safeInstalled}</span>`;
 
 		const majorBadge = isPro && !pkg.upToDate && pkg.majorVersionJump >= 1
 			? pkg.majorVersionJump === 1
 				? `<span class="badge major" title="${locale === 'es' ? 'Salto de versión mayor — puede incluir cambios incompatibles' : 'Major version jump — may include breaking changes'}">⚠ Major</span>`
 				: `<span class="badge major" title="${locale === 'es' ? 'Salto de versión mayor — puede incluir cambios incompatibles' : 'Major version jump — may include breaking changes'}">⚠ +${pkg.majorVersionJump} major</span>`
 			: '';
+
+		const SPECIAL_LABELS = ['Not found', 'Versión dinámica', 'Repositorio privado', 'No disponible', 'Dynamic version', 'Private repository', 'Not available'];
+		const isSpecialLabel = SPECIAL_LABELS.includes(pkg.latestVersion);
 		const versionStatus = pkg.exactVersion || pkg.detectedByTool
 			? pkg.upToDate
 				? `<span class="badge ok">${t('badgeOk')}</span>`
-				: `<span class="badge outdated">↑ ${pkg.latestVersion} ${t('badgeAvailable')}</span>${majorBadge}`
-			: `<span class="badge approx">${locale === 'es' ? '∼ Sin fijar' : '∼ Unpinned'}</span>`;
+				: `<span class="badge outdated">↑ ${safeLatest} ${t('badgeAvailable')}</span>${majorBadge}`
+			: pkg.latestVersion && !isSpecialLabel
+				? `<span class="badge outdated">↑ ${safeLatest} ${t('badgeAvailable')}</span>${majorBadge}<span style="font-size:10px;color:var(--vscode-descriptionForeground);margin-left:4px;" title="${locale === 'es' ? 'Versión instalada no fijada' : 'Installed version not pinned'}">(∼)</span>`
+				: `<span class="badge approx">${locale === 'es' ? '∼ Sin fijar' : '∼ Unpinned'}</span>`;
 
 		const securityBadge = pkg.vulnerabilities.length > 0
 			? `<span class="badge vuln">⚠ ${pkg.vulnerabilities.length} CVE${pkg.vulnerabilities.length > 1 ? 's' : ''}</span>`
@@ -295,18 +320,18 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 
 		const vulnDetails = pkg.vulnerabilities.map(v => `
 			<div class="vuln-detail">
-				<span class="vuln-id" style="color:${getSeverityColor(v.severity)};">${v.id}</span>
-				<span class="vuln-severity" style="color:${getSeverityColor(v.severity)};">[${v.severity}]</span>
-				<span class="vuln-summary">${v.summary}</span>
+				<span class="vuln-id" style="color:${getSeverityColor(v.severity)};">${escapeHtml(v.id)}</span>
+				<span class="vuln-severity" style="color:${getSeverityColor(v.severity)};">[${escapeHtml(v.severity)}]</span>
+				<span class="vuln-summary">${escapeHtml(v.summary)}</span>
 			</div>
 		`).join('');
 
 		const pkgLink = getLinkFn(pkg.name);
 
 		return `<tr>
-			<td><a class="pkg-link" href="${pkgLink}" target="_blank">${pkg.name}</a></td>
+			<td><a class="pkg-link" href="${escapeHtml(pkgLink)}" target="_blank">${safeName}</a></td>
 			<td>${versionLabel}</td>
-			<td>${pkg.latestVersion}</td>
+			<td>${safeLatest}</td>
 			<td>${versionStatus}</td>
 			<td>${securityBadge}${vulnDetails}</td>
 		</tr>`;
@@ -409,23 +434,13 @@ function buildAIPrompt(results: ScanResult[], locale: string): string {
 
 // ─── Punto de entrada principal ───────────────────────────────────────────────
 
-/**
- * Devuelve la ruta relativa del archivo al workspace raíz.
- * En monorepos muestra e.g. "frontend/package.json" en lugar de solo "package.json".
- * Si no hay workspace abierto o el archivo está en la raíz, devuelve solo el nombre.
- */
 function getRelativePath(filePath: string): string {
 	const workspaceFolders = (globalThis as any).__vscode_workspace_folders as string[] | undefined;
-	// En el webview no tenemos acceso a vscode API — recibimos la ruta en el resultado
-	// Extraemos la parte relativa eliminando el prefijo del workspace si está disponible
 	const normalized = filePath.replace(/\\/g, '/');
 	const parts = normalized.split('/');
-	// Detectar si hay más de un componente significativo (no solo el nombre del archivo)
-	// mostrando hasta 2 niveles de profundidad para no saturar el panel
 	if (parts.length >= 2) {
 		const last = parts[parts.length - 1];
 		const parent = parts[parts.length - 2];
-		// Si el padre no es una carpeta típica de raíz (src, lib, etc.) mostrarlo
 		const rootLikeFolders = new Set(['src', 'lib', 'app', 'packages', 'apps', 'services', 'modules']);
 		return rootLikeFolders.has(parent) ? `${parent}/${last}` : `${parent}/${last}`;
 	}
@@ -440,11 +455,11 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 	const subtitle = results
 		.map(r => {
 			const parts = r.filePath.replace(/\\\\/g, '/').split('/');
-			// Mostrar las últimas 2 partes de la ruta para identificar la carpeta en monorepos
 			const display = parts.length >= 2
 				? parts.slice(-2).join('/')
 				: (parts[parts.length - 1] ?? '');
-			return `${ECOSYSTEM_ICONS[r.ecosystem]} ${display}`;
+			// La ruta es del sistema local del usuario — escapamos para el HTML
+			return `${ECOSYSTEM_ICONS[r.ecosystem]} ${escapeHtml(display)}`;
 		})
 		.join(' · ');
 
@@ -458,11 +473,10 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 		? `<span class="license-badge pro">${license.isAdmin ? '👑 Admin' : '⚡ Pro'}</span>`
 		: `<span class="license-badge free">Free — <a href="command:scanreq.activateLicense" style="color:#b899ee;">Activar Pro</a> · <a href="https://scanreq.com/recover" style="color:var(--vscode-descriptionForeground);font-size:11px;">${locale === 'es' ? '¿Perdiste tu token?' : 'Lost your token?'}</a></span>`;
 
-	const aiPromptEscaped = isPro
-		? buildAIPrompt(results, locale)
-			.replace(/\\/g, '\\\\')
-			.replace(/`/g, '\\`')
-			.replace(/\$/g, '\\$')
+	// El prompt se codifica en Base64 para evitar cualquier problema de inyección
+	// en atributos HTML, scripts inline o template literals del webview de VS Code.
+	const aiPromptB64 = isPro
+		? Buffer.from(buildAIPrompt(results, locale), 'utf8').toString('base64')
 		: '';
 
 	const copyButtonHtml = isPro ? `
@@ -474,26 +488,23 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 		</span>
 	` : '';
 
-	// Si hay un solo ecosistema → panel simple sin header de sección
-	// Si hay varios → cada uno tiene su bloque con título
 	const ecosystemSections = results.map(result => {
 		const icon = ECOSYSTEM_ICONS[result.ecosystem];
 		const tableHtml = generatePackageTable(result, isPro, locale);
 
 		if (results.length === 1) {
-			// Sin header de ecosistema — mismo aspecto que v2.0
 			return tableHtml;
 		}
+
+		const parts = result.filePath.replace(/\\\\/g, '/').split('/');
+		const fileDisplay = escapeHtml(parts.length >= 2 ? parts.slice(-2).join('/') : (parts[parts.length-1] ?? ''));
 
 		return `
 			<div class="ecosystem-section">
 				<div class="ecosystem-header">
 					<span class="ecosystem-icon">${icon}</span>
-					<span class="ecosystem-name">${result.ecosystem.charAt(0).toUpperCase() + result.ecosystem.slice(1)}</span>
-					<span class="ecosystem-file">${(() => {
-					const parts = result.filePath.replace(/\\\\/g, '/').split('/');
-					return parts.length >= 2 ? parts.slice(-2).join('/') : (parts[parts.length-1] ?? '');
-				})()}</span>
+					<span class="ecosystem-name">${escapeHtml(result.ecosystem.charAt(0).toUpperCase() + result.ecosystem.slice(1))}</span>
+					<span class="ecosystem-file">${fileDisplay}</span>
 				</div>
 				${tableHtml}
 			</div>
@@ -505,6 +516,7 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 	<head>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src vscode-resource: https:; connect-src 'none';">
 		<title>ScanReq</title>
 		<style>
 			*, *::before, *::after { box-sizing: border-box; }
@@ -552,7 +564,6 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			.summary-card.ok { background: rgba(40,167,69,0.15); border-color: rgba(40,167,69,0.3); color: #28a745; }
 			.summary-card.outdated { background: rgba(255,165,0,0.15); border-color: rgba(255,165,0,0.3); color: #ffa500; }
 			.summary-card.vuln { background: rgba(255,68,68,0.15); border-color: rgba(255,68,68,0.3); color: #ff4444; }
-			/* Sección por ecosistema (solo visible si hay más de uno) */
 			.ecosystem-section { margin-bottom: 40px; padding-bottom: 8px; }
 			.ecosystem-section + .ecosystem-section { border-top: 1px solid var(--vscode-panel-border); padding-top: 32px; }
 			.ecosystem-header {
@@ -594,7 +605,8 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			}
 			.phase-low    { background: rgba(40,167,69,0.08); border-color: #28a745; }
 			.phase-medium { background: rgba(255,165,0,0.08); border-color: #ffa500; }
-			.phase-high   { background: rgba(255,100,50,0.08); border-color: #ff6432; }
+			.phase-high      { background: rgba(255,100,50,0.08); border-color: #ff6432; }
+			.phase-unpatched { background: rgba(180,0,0,0.1);        border-color: #cc2222; }
 			.phase-label  { font-size: 12px; font-weight: 700; color: var(--vscode-foreground); }
 			.phase-note   { font-size: 11px; color: var(--vscode-descriptionForeground); }
 			.tool-detected {
@@ -652,10 +664,15 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			ScanReq · <a href="https://scanreq.com" style="color:inherit;">scanreq.com</a>
 			${isPro ? ` · ${locale === 'es' ? 'Plan Pro activo' : 'Pro plan active'}` : ` · <a href="https://scanreq.com/recover" style="color:inherit;">${locale === 'es' ? '¿Perdiste tu token?' : 'Lost your token?'}</a>`}
 		</div>
+		<!-- El prompt se almacena en un data attribute en Base64.
+		     Esto evita cualquier inyección en atributos HTML o scripts inline. -->
+		${isPro ? `<div id="aiPromptData" data-prompt="${aiPromptB64}" style="display:none;" aria-hidden="true"></div>` : ''}
 		<script>
-			const aiPrompt = \`${aiPromptEscaped}\`;
-
 			function copyPrompt() {
+				const promptEl = document.getElementById('aiPromptData');
+				if (!promptEl) { return; }
+				const b64 = promptEl.dataset.prompt || '';
+				const aiPrompt = b64 ? new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0))) : '';
 				navigator.clipboard.writeText(aiPrompt).then(() => {
 					const btn = document.getElementById('copyPromptBtn');
 					const feedback = document.getElementById('copyFeedback');

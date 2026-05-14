@@ -6,7 +6,7 @@ import { ScanResult } from './ecosystems/types';
 import { getAdapterForFile, getAllWatchPatterns } from './ecosystems/registry';
 import { updateStatusBar } from './statusbar';
 import { getWebviewContent } from './webview';
-import { getLicenseStatus, activateLicense, deactivateLicense } from './license';
+import { getLicenseStatus, activateLicense, deactivateLicense, revalidateLicenseIfNeeded } from './license';
 
 const EXCLUDE_DIRS = new Set([
 	'node_modules', '.git', 'vendor', 'target', '.build',
@@ -198,8 +198,12 @@ export function activate(context: vscode.ExtensionContext) {
 	watcher.onDidDelete(() => runScan(true));
 	context.subscriptions.push(watcher);
 
-	// Scan inicial
-	runScan(true);
+	// Revalidación periódica silenciosa (cada 7 días)
+	// No bloquea el arranque — se ejecuta en background
+	revalidateLicenseIfNeeded(context).then(() => {
+		// Relanzar scan si el estado de licencia cambió durante la revalidación
+		runScan(true);
+	});
 }
 
 export function deactivate() {}

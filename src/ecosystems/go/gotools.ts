@@ -64,7 +64,8 @@ export async function runGoModGraph(goModPath: string): Promise<GoModEdge[]> {
 	try {
 		const { stdout } = await execFileAsync('go', ['mod', 'graph'], {
 			cwd,
-			timeout: 30000,    // go mod graph puede tardar si descarga módulos
+			timeout: 15000,        // reducido de 30s a 15s — si tarda más algo va mal
+			maxBuffer: 2 * 1024 * 1024  // 2 MB máximo — proyectos grandes con muchas deps
 		});
 
 		const edges: GoModEdge[] = [];

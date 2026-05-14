@@ -49,13 +49,21 @@ export async function getInstalledVersion(packageName: string): Promise<string |
 	// pip show no acepta extras como uvicorn[standard] — limpiamos
 	const cleanName = packageName.replace(/\[.*?\]/g, '').trim();
 
+	// Validación básica del nombre para evitar inyección de argumentos
+	if (!/^[a-zA-Z0-9._-]+$/.test(cleanName)) {
+		return null;
+	}
+
 	try {
 		const parts = cmd.split(' ');
 		const bin = parts[0];
 		const baseArgs = parts.slice(1);
 		const args = [...baseArgs, 'show', cleanName];
 
-		const { stdout } = await execFileAsync(bin, args, { timeout: 10000 });
+		const { stdout } = await execFileAsync(bin, args, {
+			timeout: 5000,       // reducido de 10s a 5s
+			maxBuffer: 64 * 1024 // 64 KB máximo — pip show es siempre pequeño
+		});
 
 		for (const line of stdout.split('\n')) {
 			if (line.toLowerCase().startsWith('version:')) {
@@ -80,7 +88,10 @@ export async function getAllInstalledPackages(): Promise<InstalledPackage[]> {
 		const baseArgs = parts.slice(1);
 		const args = [...baseArgs, 'list', '--format=json'];
 
-		const { stdout } = await execFileAsync(bin, args, { timeout: 15000 });
+		const { stdout } = await execFileAsync(bin, args, {
+			timeout: 10000,        // reducido de 15s a 10s
+			maxBuffer: 512 * 1024  // 512 KB máximo — suficiente para miles de paquetes
+		});
 		const parsed = JSON.parse(stdout) as Array<{ name: string; version: string }>;
 		return parsed.map(p => ({ name: p.name.toLowerCase(), version: p.version }));
 	} catch {

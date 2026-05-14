@@ -178,7 +178,7 @@ export async function runCompatibilityAnalysis(
 		if (!pkg.upToDate && pkg.installedVersion !== 'unknown' && pkg.latestVersion !== 'Not found') {
 			safeUpdates.push({
 				packageName: pkg.name,
-				currentVersion: pkg.installedVersion,
+				currentVersion: pkg.exactVersion ? pkg.installedVersion : `∼${pkg.installedVersion}`,
 				recommendedVersion: pkg.latestVersion,
 				reason: pkg.vulnerabilities.length > 0
 					? locale === 'es'
@@ -187,10 +187,49 @@ export async function runCompatibilityAnalysis(
 					: locale === 'es'
 						? 'Versión más reciente disponible'
 						: 'Newer version available',
-					migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0)
-			});
-		}
-	});
+						migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0)
+				});
+					} else if (pkg.upToDate && pkg.vulnerabilities.length > 0) {
+			// Paquete al día según el registry pero con CVEs activos.
+			// Si OSV reporta fixedVersion, sugerirla directamente.
+			const fixedVersions = pkg.vulnerabilities
+				.map(v => v.fixedVersion)
+				.filter((v): v is string => !!v);
+
+			if (fixedVersions.length > 0) {
+				// Tomar la versión más alta entre todos los fixes reportados por OSV
+				fixedVersions.sort((a, b) => {
+					const pa = a.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
+					const pb = b.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
+					const len = Math.max(pa.length, pb.length);
+					for (let i = 0; i < len; i++) {
+						const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
+						if (diff !== 0) { return diff; }
+					}
+					return 0;
+				});
+				safeUpdates.push({
+					packageName: pkg.name,
+					currentVersion: pkg.installedVersion,
+					recommendedVersion: fixedVersions[0],
+					reason: locale === 'es'
+						? `Versión parcheada disponible — corrige ${pkg.vulnerabilities.length} CVE(s)`
+						: `Patched version available — fixes ${pkg.vulnerabilities.length} CVE(s)`,
+					migrationRisk: 'medium',
+				});
+			} else {
+				safeUpdates.push({
+					packageName: pkg.name,
+					currentVersion: pkg.installedVersion,
+					recommendedVersion: pkg.installedVersion,
+					reason: locale === 'es'
+						? `Sin parche conocido — evalúa mitigar o reemplazar`
+						: `No known patch — consider mitigating or replacing`,
+					migrationRisk: 'unpatched',
+				});
+			}
+			}
+		});
 
 	await Promise.all(analysisPromises);
 

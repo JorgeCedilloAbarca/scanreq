@@ -20,14 +20,24 @@ export async function checkMaven(
 	artifactId: string,
 	installedVersion: string,
 	exactVersion: boolean,
-	isPro: boolean
+	isPro: boolean,
+	hasPrivateRepos: boolean = false
 ): Promise<PackageResult> {
+	// Determinar mensaje según el motivo de no encontrar el artefacto
+	const unavailableLabel = installedVersion.toUpperCase().includes('SNAPSHOT')
+		? 'Versión dinámica'
+		: hasPrivateRepos
+			? 'Repositorio privado'
+			: 'No disponible';
+
 	const notFound: PackageResult = {
 		name,
 		installedVersion,
-		latestVersion: 'Not found',
-		// Si la versión es exacta y no encontramos en el registry, no es un problema real
-		upToDate: exactVersion && installedVersion !== 'unknown',
+		latestVersion: unavailableLabel,
+		// Marcar siempre como upToDate para evitar que aparezca en safeUpdates
+		// con un label no-versión como "Versión dinámica" o "Repositorio privado".
+		// La columna Versión en webview ya muestra ∼ Sin fijar para estos casos.
+		upToDate: true,
 		exactVersion,
 		vulnerabilities: [],
 		detectedByTool: false,
@@ -102,6 +112,33 @@ function isDateVersion(version: string): boolean {
 }
 
 /**
+ * Verifica si una versión específica existe en Maven Central para un artefacto.
+ * Usado por compatibility.ts para validar fixedVersions de OSV antes de sugerirlas.
+ */
+export async function versionExistsInMaven(
+	groupId: string,
+	artifactId: string,
+	version: string
+): Promise<boolean> {
+	try {
+		const query = `g:${encodeURIComponent(groupId)}+AND+a:${encodeURIComponent(artifactId)}+AND+v:${encodeURIComponent(version)}`;
+		const url   = `https://search.maven.org/solrsearch/select?q=${query}&core=gav&rows=1&wt=json`;
+
+		const response = await fetch(url, {
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.4 (https://scanreq.com)' }
+		});
+
+		if (!response.ok) { return false; }
+
+		const data = await response.json() as any;
+		const docs: any[] = data?.response?.docs;
+		return Array.isArray(docs) && docs.length > 0;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Busca la versión semver estable más reciente de un artefacto en Maven Central.
  * Usa el endpoint de versiones (core=gav) que devuelve todas las versiones.
  * Filtra: versiones fecha, SNAPSHOT, alpha, beta, RC, M (milestone).
@@ -138,18 +175,21 @@ async function findLatestSemverVersion(groupId: string, artifactId: string): Pro
 
 /**
  * Comprueba si una versión es semver estable (no fecha, no snapshot, no pre-release).
+ * Acepta sufijos de release válidos en Maven: -GA, -Final, -RELEASE, -jre11, -android, etc.
  */
 function isStableSemver(version: string): boolean {
 	if (isDateVersion(version)) { return false; }
 	const lower = version.toLowerCase();
-	if (lower.includes('snapshot')) { return false; }
-	if (lower.includes('alpha'))    { return false; }
-	if (lower.includes('beta'))     { return false; }
-	if (lower.includes('-rc'))      { return false; }
-	if (lower.includes('-m') && /\-m\d/i.test(lower)) { return false; } // milestone: -M1, -M2
-	if (lower.includes('-ea'))      { return false; } // early access: 25-ea+21
-	if (lower.includes('+'))        { return false; } // build metadata: 25-ea+21
-	if (version === 'LATEST' || version === 'RELEASE') { return false; }
+	if (lower.includes('snapshot'))                        { return false; }
+	if (lower.includes('alpha'))                           { return false; }
+	if (lower.includes('beta'))                            { return false; }
+	if (lower.includes('-rc') && /\-rc\d*/i.test(lower))  { return false; } // -RC1, -rc2
+	if (/\-m\d/i.test(lower))                             { return false; } // milestone: -M1, -M2
+	if (lower.includes('-ea'))                             { return false; } // early access
+	if (lower.includes('-preview'))                        { return false; }
+	if (lower.includes('-incubating'))                     { return false; }
+	if (lower.includes('+'))                               { return false; } // build metadata
+	if (version === 'LATEST' || version === 'RELEASE')     { return false; }
 	// Debe empezar por dígito
 	return /^\d/.test(version);
 }

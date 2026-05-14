@@ -10,6 +10,7 @@ export interface Vulnerability {
 	id: string;
 	summary: string;
 	severity: string;
+	fixedVersion?: string;  // versión en la que se parchó el CVE, si OSV la conoce
 }
 
 export interface PackageResult {
@@ -39,7 +40,7 @@ export interface SafeUpdate {
 	currentVersion: string;
 	recommendedVersion: string;
 	reason: string;
-	migrationRisk: 'low' | 'medium' | 'high';
+	migrationRisk: 'low' | 'medium' | 'high' | 'unpatched';
 }
 
 export interface CompatibilityReport {
@@ -76,7 +77,9 @@ export function calcMajorVersionJump(from: string, to: string): number {
 }
 
 export function calcMigrationRisk(majorJump: number, hasCVEs: boolean): 'low' | 'medium' | 'high' {
-	if (majorJump >= 2) { return 'high'; }
-	if (majorJump === 1 || hasCVEs) { return 'medium'; }
+	// Major jump siempre es riesgo alto, independientemente de CVEs
+	if (majorJump >= 1) { return 'high'; }
+	// Sin major jump pero con CVEs → riesgo medio
+	if (hasCVEs) { return 'medium'; }
 	return 'low';
 }

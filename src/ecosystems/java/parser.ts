@@ -8,6 +8,7 @@ export interface ParsedPackage {
 	exactVersion: boolean;
 	section: string;      // 'dependencies' | 'dependencyManagement'
 	scope: string;        // 'compile' | 'test' | 'provided' | 'runtime' | 'system'
+	hasPrivateRepos: boolean; // true si el pom declara <repositories> externos a Maven Central
 }
 
 // Cache de BOMs descargados durante el scan
@@ -40,6 +41,7 @@ export async function parsePomXmlAsync(filePath: string): Promise<ParsedPackage[
 	}
 
 	const properties = extractProperties(content);
+	const hasPrivateRepos = detectPrivateRepos(content);
 
 	// Extraer BOM del <parent> si es Spring Boot
 	const parentBom = extractParentBom(content, properties);
@@ -53,7 +55,7 @@ export async function parsePomXmlAsync(filePath: string): Promise<ParsedPackage[
 	// dependencyManagement primero
 	const mgmtDeps = extractDependencies(content, 'dependencyManagement', properties, bomVersions);
 	for (const dep of mgmtDeps) {
-		if (!seen.has(dep.name)) { seen.add(dep.name); results.push(dep); }
+		if (!seen.has(dep.name)) { seen.add(dep.name); results.push({ ...dep, hasPrivateRepos }); }
 	}
 
 	// dependencies directas (prioridad más alta)
@@ -61,10 +63,10 @@ export async function parsePomXmlAsync(filePath: string): Promise<ParsedPackage[
 	for (const dep of directDeps) {
 		if (seen.has(dep.name)) {
 			const idx = results.findIndex(r => r.name === dep.name);
-			if (idx !== -1) { results[idx] = dep; }
+			if (idx !== -1) { results[idx] = { ...dep, hasPrivateRepos }; }
 		} else {
 			seen.add(dep.name);
-			results.push(dep);
+			results.push({ ...dep, hasPrivateRepos });
 		}
 	}
 
@@ -82,28 +84,55 @@ export function parsePomXml(filePath: string): ParsedPackage[] {
 		return [];
 	}
 
-	const properties = extractProperties(content);
-	const seen       = new Set<string>();
+	const properties     = extractProperties(content);
+	const hasPrivateRepos = detectPrivateRepos(content);
+	const seen           = new Set<string>();
 	const results: ParsedPackage[] = [];
-	const emptyBom   = new Map<string, string>();
+	const emptyBom       = new Map<string, string>();
 
 	const mgmtDeps = extractDependencies(content, 'dependencyManagement', properties, emptyBom);
 	for (const dep of mgmtDeps) {
-		if (!seen.has(dep.name)) { seen.add(dep.name); results.push(dep); }
+		if (!seen.has(dep.name)) { seen.add(dep.name); results.push({ ...dep, hasPrivateRepos }); }
 	}
 
 	const directDeps = extractDependencies(content, 'dependencies', properties, emptyBom);
 	for (const dep of directDeps) {
 		if (seen.has(dep.name)) {
 			const idx = results.findIndex(r => r.name === dep.name);
-			if (idx !== -1) { results[idx] = dep; }
+			if (idx !== -1) { results[idx] = { ...dep, hasPrivateRepos }; }
 		} else {
 			seen.add(dep.name);
-			results.push(dep);
+			results.push({ ...dep, hasPrivateRepos });
 		}
 	}
 
 	return results;
+}
+
+// ─── Detección de repositorios externos ──────────────────────────────────────
+
+/**
+ * Detecta si el pom.xml declara repositorios externos a Maven Central.
+ * Maven Central tiene URL repo1.maven.org/maven2 o repo.maven.apache.org.
+ * Cualquier otro <repository> se considera privado o externo.
+ */
+function detectPrivateRepos(content: string): boolean {
+	const reposBlock = extractBlock(content, 'repositories');
+	if (!reposBlock) { return false; }
+
+	const urlRe = /<url>\s*([^<]+)\s*<\/url>/g;
+	let m: RegExpExecArray | null;
+	while ((m = urlRe.exec(reposBlock)) !== null) {
+		const url = m[1].trim().toLowerCase();
+		// Ignorar Maven Central y sus mirrors conocidos
+		if (url.includes('repo1.maven.org') ||
+			url.includes('repo.maven.apache.org') ||
+			url.includes('central.maven.org')) {
+			continue;
+		}
+		return true; // Hay al menos un repo externo
+	}
+	return false;
 }
 
 // ─── BOM resolution ───────────────────────────────────────────────────────────
@@ -180,6 +209,11 @@ async function resolveBomVersions(
 
 		const xml = await response.text();
 
+		// Extraer las <properties> del propio BOM para resolver versiones internas.
+		// Spring Boot BOM define cosas como <postgresql.version>42.7.3</postgresql.version>
+		// y las usa en su <dependencyManagement> como ${postgresql.version}.
+		const bomProperties = extractProperties(xml);
+
 		const dmStart = xml.indexOf('<dependencyManagement>');
 		const dmEnd   = xml.indexOf('</dependencyManagement>');
 		if (dmStart === -1 || dmEnd === -1) {
@@ -195,12 +229,17 @@ async function resolveBomVersions(
 			const block         = dm[1];
 			const depGroupId    = extractTag(block, 'groupId');
 			const depArtifactId = extractTag(block, 'artifactId');
-			const depVersion    = extractTag(block, 'version');
+			const rawDepVersion = extractTag(block, 'version');
 
-			if (depGroupId && depArtifactId && depVersion) {
-				const fullName = `${depGroupId}:${depArtifactId}`;
-				map.set(fullName, depVersion);
-				map.set(depArtifactId, depVersion);
+			if (depGroupId && depArtifactId && rawDepVersion) {
+				// Resolver properties internas del BOM (ej: ${postgresql.version} → 42.7.3)
+				const depVersion = resolveProperty(rawDepVersion, bomProperties);
+				// Solo guardar si la versión quedó completamente resuelta
+				if (depVersion && !depVersion.includes('${')) {
+					const fullName = `${depGroupId}:${depArtifactId}`;
+					map.set(fullName, depVersion);
+					map.set(depArtifactId, depVersion);
+				}
 			}
 		}
 	} catch {
@@ -283,6 +322,7 @@ function extractDependencies(
 			exactVersion: isExactVersion(version),
 			section,
 			scope,
+			hasPrivateRepos: false, // sobreescrito por parsePomXml/parsePomXmlAsync
 		});
 	}
 
@@ -319,7 +359,18 @@ function isExactVersion(version: string): boolean {
 	if (!version) { return false; }
 	if (version.includes('${')) { return false; }
 	if (version.startsWith('[') || version.startsWith('(')) { return false; }
-	if (version.toUpperCase().includes('SNAPSHOT')) { return false; }
+
+	const upper = version.toUpperCase();
+	if (upper.includes('SNAPSHOT')) { return false; }
 	if (version === 'LATEST' || version === 'RELEASE') { return false; }
-	return /^\d[\d.]*$/.test(version);
+
+	// Pre-releases no exactos
+	if (/-(alpha|beta|rc\d*|m\d+|ea|preview|incubating)/i.test(version)) { return false; }
+	if (version.includes('+')) { return false; } // build metadata: 25-ea+21
+
+	// Sufijos de release estables válidos en Maven:
+	// -GA (General Availability), -Final, -RELEASE, -jre11, -jre8, -android, -b123 (build number)
+	// Estos son versiones exactas perfectamente válidas.
+	// Formato: dígitos y puntos, opcionalmente seguidos de un sufijo -PALABRA o -NúmeroLetra
+	return /^\d[\d.]*(-[a-zA-Z0-9]+)?$/.test(version);
 }

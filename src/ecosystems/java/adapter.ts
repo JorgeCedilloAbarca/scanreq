@@ -23,7 +23,8 @@ export const javaAdapter: EcosystemAdapter = {
 					pkg.artifactId,
 					pkg.version,
 					pkg.exactVersion,
-					isPro
+					isPro,
+					pkg.hasPrivateRepos
 				))
 			);
 			packages.push(...results);

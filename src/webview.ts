@@ -455,16 +455,18 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 	const isPro = license.active;
 
 	// Subtítulo dinámico según los archivos escaneados
-	const subtitle = results
-		.map(r => {
-			const parts = r.filePath.replace(/\\\\/g, '/').split('/');
-			const display = parts.length >= 2
-				? parts.slice(-2).join('/')
-				: (parts[parts.length - 1] ?? '');
-			// La ruta es del sistema local del usuario — escapamos para el HTML
-			return `${ECOSYSTEM_ICONS[r.ecosystem]} ${escapeHtml(display)}`;
-		})
-		.join(' · ');
+	const subtitleItems = results.map(r => {
+		const parts = r.filePath.replace(/\\\\/g, '/').split('/');
+		const display = parts.length >= 2
+			? parts.slice(-2).join('/')
+			: (parts[parts.length - 1] ?? '');
+		return `${ECOSYSTEM_ICONS[r.ecosystem]} ${display}`;
+	});
+
+	const SUBTITLE_COLLAPSE_THRESHOLD = 3;
+	const subtitle = subtitleItems.length <= SUBTITLE_COLLAPSE_THRESHOLD
+		? subtitleItems.join(' · ')
+		: '__COLLAPSIBLE__';
 
 	// Totales globales para el summary header
 	const allPackages = results.flatMap(r => r.packages);
@@ -537,6 +539,20 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			h2.section-title { font-size: 15px; font-weight: 600; margin: 0 0 16px 0; }
 			h3.subsection-title { font-size: 13px; font-weight: 600; margin: 0 0 12px 0; }
 			.subtitle { color: var(--vscode-descriptionForeground); font-size: 12px; margin-bottom: 20px; }
+			.subtitle-collapsible { margin-bottom: 20px; }
+			.subtitle-summary {
+				color: var(--vscode-descriptionForeground); font-size: 12px;
+				cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px;
+				user-select: none;
+			}
+			.subtitle-summary::-webkit-details-marker { display: none; }
+			.subtitle-summary::before { content: '▶'; font-size: 9px; transition: transform 0.15s; }
+			.subtitle-collapsible[open] .subtitle-summary::before { transform: rotate(90deg); }
+			.subtitle-toggle-hint { color: var(--vscode-textLink-foreground); font-size: 11px; }
+			.subtitle-list { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding-left: 14px; }
+			.subtitle-item {
+				color: var(--vscode-descriptionForeground); font-size: 11px;
+			}
 			.header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 			.license-badge {
 				font-size: 11px; font-weight: 600; padding: 3px 10px;
@@ -652,7 +668,17 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 				${licenceBadge}
 			</div>
 		</div>
-		<div class="subtitle">${subtitle}</div>
+		${subtitle === '__COLLAPSIBLE__' ? `
+		<details class="subtitle-collapsible">
+			<summary class="subtitle-summary">
+				${subtitleItems.length} ${locale === 'es' ? 'archivos escaneados' : 'files scanned'}
+				<span class="subtitle-toggle-hint">(click para ver)</span>
+			</summary>
+			<div class="subtitle-list">
+				${subtitleItems.map(item => `<span class="subtitle-item">${item}</span>`).join('')}
+			</div>
+		</details>
+		` : `<div class="subtitle">${subtitle}</div>`}
 		<div class="summary">
 			<div class="summary-card ok">✓ ${okCount} ${t('upToDate')}</div>
 			<div class="summary-card outdated">↑ ${outdatedCount} ${t('outdated')}</div>

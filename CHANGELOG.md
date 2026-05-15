@@ -2,6 +2,11 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.5.4] - 2026-05-15
+
+### Fixed
+- **Screenshots not loading in Marketplace or VS Code** — image paths were relative (`images/screenshot1_clean.png`), which the VS Code Marketplace does not support. Replaced with absolute GitHub raw URLs (`https://raw.githubusercontent.com/...`).
+
 ## [2.5.3] - 2026-05-14
 
 ### Changed

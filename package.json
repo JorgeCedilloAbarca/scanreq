@@ -2,7 +2,7 @@
   "name": "scanreq",
   "displayName": "ScanReq",
   "description": "Real-time security scanner for Python, Node.js, Rust, Go, PHP, Ruby and Java (Maven & Gradle) dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
-  "version": "2.5.2",
+  "version": "2.5.4",
   "publisher": "trustdev",
   "author": {
     "name": "TrustDev"
@@ -85,12 +85,12 @@
         "scanreq.autoOpenPanel": {
           "type": "boolean",
           "default": false,
-          "description": "Abrir el panel autom\u00e1ticamente al iniciar VS Code o al detectar cambios en archivos de dependencias. / Automatically open the panel on VS Code startup or when changes are detected in dependency files."
+          "description": "Abrir el panel automáticamente al iniciar VS Code o al detectar cambios en archivos de dependencias. / Automatically open the panel on VS Code startup or when changes are detected in dependency files."
         },
         "scanreq.showNotification": {
           "type": "boolean",
           "default": true,
-          "description": "Mostrar notificaci\u00f3n de progreso mientras se analizan las dependencias. / Show progress notification while dependencies are being analyzed."
+          "description": "Mostrar notificación de progreso mientras se analizan las dependencias. / Show progress notification while dependencies are being analyzed."
         }
       }
     }

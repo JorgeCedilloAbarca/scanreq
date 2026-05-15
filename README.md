@@ -13,13 +13,13 @@ No configuration. No CLI. No leaving the editor.
 > Scanned against real open-source projects from GitHub — not hand-picked examples.
 
 **Node.js project — axios 1.13.0 with 5 HIGH CVEs detected, major version jumps flagged**
-![ScanReq panel showing a Node.js project with 77 outdated packages and 13 CVEs, including 5 HIGH severity CVEs on axios](images/screenshot1_clean.png)
+![ScanReq panel showing a Node.js project with 77 outdated packages and 13 CVEs, including 5 HIGH severity CVEs on axios](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot1_clean.png)
 
 **Gradle project — commons-io CVE detected inline with GHSA ID and severity**
-![ScanReq panel showing a Gradle project with 4 outdated packages and 1 CVE on commons-io](images/screenshot2_clean.png)
+![ScanReq panel showing a Gradle project with 4 outdated packages and 1 CVE on commons-io](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot2_clean.png)
 
 **Pro — Safe update plan with 3-phase migration table and compatibility analysis**
-![ScanReq Pro compatibility analysis panel showing Phase 1 low-risk and Phase 2 medium-risk update recommendations](images/screenshot3_clean.png)
+![ScanReq Pro compatibility analysis panel showing Phase 1 low-risk and Phase 2 medium-risk update recommendations](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot3_clean.png)
 
 ---
 
@@ -190,7 +190,7 @@ Pro license tokens are validated against scanreq.com. The token is stored in VS 
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-**v2.5.1** — Security: `encodeURIComponent` added to Go module links; CVEs now sorted by severity before truncating (CRITICAL shown first); extractFixedVersion rewritten to recommend the minimum applicable fix for the installed version; OSV queries now time out after 10s; license token input masked.
+**v2.5.4** — Fix: screenshots now load correctly in VS Code Marketplace and editor using absolute GitHub raw URLs.
 
 ---
 

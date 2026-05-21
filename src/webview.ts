@@ -476,7 +476,7 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 
 	const licenceBadge = isPro
 		? `<span class="license-badge pro">${license.isAdmin ? '👑 Admin' : '⚡ Pro'}</span>`
-		: `<span class="license-badge free">Free — <a href="command:scanreq.activateLicense" style="color:#b899ee;">Activar Pro</a> · <a href="https://scanreq.com/recover" style="color:var(--vscode-descriptionForeground);font-size:11px;">${locale === 'es' ? '¿Perdiste tu token?' : 'Lost your token?'}</a></span>`;
+		: `<span class="license-badge free">Free — <a href="#" onclick="activatePro();return false;" style="color:#b899ee;">Activar Pro</a> · <a href="https://scanreq.com/recover" style="color:var(--vscode-descriptionForeground);font-size:11px;">${locale === 'es' ? '¿Perdiste tu token?' : 'Lost your token?'}</a></span>`;
 
 	// El prompt se codifica en Base64 para evitar cualquier problema de inyección
 	// en atributos HTML, scripts inline o template literals del webview de VS Code.
@@ -700,6 +700,15 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			// NO en un data-attribute del DOM. Así no es accesible vía
 			// document.getElementById().dataset desde una posible inyección XSS.
 			(function () {
+				// acquireVsCodeApi() solo puede llamarse una vez por sesión de webview
+				const vscode = acquireVsCodeApi();
+
+				// Botón "Activar Pro" — usa postMessage en lugar de href="command:"
+				// El esquema command: es bloqueado silenciosamente por la CSP estricta.
+				window.activatePro = function activatePro() {
+					vscode.postMessage({ command: 'activateLicense' });
+				};
+
 				${isPro ? `const _b64 = ${JSON.stringify(aiPromptB64)};` : 'const _b64 = "";'}
 
 				window.copyPrompt = function copyPrompt() {

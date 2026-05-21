@@ -140,6 +140,16 @@ export function activate(context: vscode.ExtensionContext) {
 						{ enableScripts: true, enableFindWidget: true }
 					);
 					activePanel.webview.html = getWebviewContent(results, license);
+					// Escuchar mensajes del webview (p.ej. botón "Activar Pro")
+					activePanel.webview.onDidReceiveMessage(
+						async (message: { command: string }) => {
+							if (message.command === 'activateLicense') {
+								await vscode.commands.executeCommand('scanreq.activateLicense');
+							}
+						},
+						null,
+						context.subscriptions
+					);
 					activePanel.onDidDispose(
 						() => { activePanel = undefined; },
 						null,

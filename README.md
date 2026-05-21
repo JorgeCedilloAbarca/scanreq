@@ -80,7 +80,7 @@ Everything below is free, forever, with no account required:
 
 ---
 
-## Pro plan — $19, one-time payment
+## Pro plan — $19 USD / €17 EUR, one-time payment
 
 Pro exists for one reason: most real projects don't pin every version exactly, and most real projects have transitive conflicts nobody notices until something breaks in production.
 
@@ -137,15 +137,18 @@ One click copies a structured prompt to your clipboard with the full scan result
 
 **$19 USD / €17 EUR — one-time payment. No subscription. Works on all your machines.**
 
-→ [Get Pro at scanreq.com](https://scanreq.com/pricing)
+→ [Get Pro at scanreq.com/pricing](https://scanreq.com/pricing)
 
 ---
 
 ## Activating Pro
 
 1. Purchase at [scanreq.com/pricing](https://scanreq.com/pricing)
-2. `Ctrl+Shift+P` → **ScanReq: Activar Plan Pro**
-3. Enter your license token — Pro activates instantly
+2. Your license token is delivered instantly on the success page and sent to your email.
+3. `Ctrl+Shift+P` → **ScanReq: Activar Plan Pro**
+4. Enter your license token — Pro activates instantly.
+
+**Lost your token?** Recover it anytime at [scanreq.com/recover](https://scanreq.com/recover) — enter the email you used to purchase and we'll send it to you.
 
 ---
 
@@ -190,7 +193,7 @@ Pro license tokens are validated against scanreq.com. The token is stored in VS 
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-**v2.5.4** — Fix: screenshots now load correctly in VS Code Marketplace and editor using absolute GitHub raw URLs.
+**v2.6.0** — Pro plan now available. Token recovery link added to error messages and license revocation notifications.
 
 ---
 

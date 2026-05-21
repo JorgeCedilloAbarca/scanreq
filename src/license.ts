@@ -75,9 +75,12 @@ export async function revalidateLicenseIfNeeded(
 			await context.globalState.update(LAST_VALIDATED_KEY, undefined);
 			vscode.window.showWarningMessage(
 				'ScanReq: Tu licencia Pro ha sido desactivada. Visita scanreq.com para más información.',
+				'Recover token',
 				'Ir a scanreq.com'
 			).then(action => {
-				if (action === 'Ir a scanreq.com') {
+				if (action === 'Recover token') {
+					vscode.env.openExternal(vscode.Uri.parse('https://scanreq.com/recover'));
+				} else if (action === 'Ir a scanreq.com') {
 					vscode.env.openExternal(vscode.Uri.parse('https://scanreq.com'));
 				}
 			});
@@ -117,10 +120,17 @@ export async function activateLicense(
 					: 'Licencia Pro activada correctamente. ¡Bienvenido!';
 				return { success: true, message: welcome };
 			} else {
-				return { success: false, message: data.message ?? 'Token inválido o ya usado.' };
+				const msg = data.message ?? 'Token inválido o ya usado.';
+				return {
+					success: false,
+					message: `${msg} ¿Perdiste tu token? Recupéralo en scanreq.com/recover`
+				};
 			}
 		} else if (response.status === 404) {
-			return { success: false, message: 'Token no encontrado. Revisa que lo hayas copiado correctamente.' };
+			return {
+				success: false,
+				message: 'Token no encontrado. Revisa que lo hayas copiado correctamente. ¿Perdiste tu token? Recupéralo en scanreq.com/recover'
+			};
 		} else {
 			return { success: false, message: `Error del servidor (${response.status}). Inténtalo de nuevo.` };
 		}

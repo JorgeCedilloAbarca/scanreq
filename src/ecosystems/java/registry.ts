@@ -23,12 +23,14 @@ export async function checkMaven(
 	isPro: boolean,
 	hasPrivateRepos: boolean = false
 ): Promise<PackageResult> {
-	// Determinar mensaje según el motivo de no encontrar el artefacto
+	// Determinar label según el motivo de no encontrar el artefacto.
+	// Usamos strings en inglés para consistencia con el resto del panel
+	// (los labels de latestVersion no pasan por i18n pero no deben mezclar idiomas).
 	const unavailableLabel = installedVersion.toUpperCase().includes('SNAPSHOT')
-		? 'Versión dinámica'
+		? 'Dynamic version'
 		: hasPrivateRepos
-			? 'Repositorio privado'
-			: 'No disponible';
+			? 'Private repository'
+			: 'Not available';
 
 	const notFound: PackageResult = {
 		name,

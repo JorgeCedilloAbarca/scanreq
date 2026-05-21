@@ -2,16 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-// ─── Caché de lockfile por workspace ─────────────────────────────────────────
-// Evita releer y reparsear el lockfile en cada paquete del mismo scan.
-// Se limpia al inicio de cada scan (llamando clearLockfileCache()).
+// ─── Caché de lockfile por directorio ────────────────────────────────────────
+// Clave: directorio del package.json → mapa packageName → version.
+// Al usar un Map por directorio en lugar de una única variable global,
+// los scans paralelos de múltiples package.json en un monorepo no se
+// interfieren entre sí (fix race condition).
+// Se limpia completamente al inicio de cada scan (clearLockfileCache()).
 
-let lockfileCache: Map<string, string> | null = null;
-let lockfileCacheRoot: string | null = null;
+const lockfileCacheByDir = new Map<string, Map<string, string>>();
 
 export function clearLockfileCache(): void {
-	lockfileCache = null;
-	lockfileCacheRoot = null;
+	lockfileCacheByDir.clear();
 }
 
 // ─── API pública ──────────────────────────────────────────────────────────────
@@ -81,13 +82,15 @@ function readFromNodeModules(workspaceRoot: string, packageName: string): string
 }
 
 /**
- * Lee la versión instalada desde el lockfile disponible en el workspace.
- * Usa caché para no releer el archivo en cada paquete del scan.
+ * Lee la versión instalada desde el lockfile disponible en el directorio dado.
+ * Usa caché por directorio para no releer el archivo en cada paquete del scan.
+ * El Map por directorio evita race conditions en monorepos con múltiples package.json.
  */
 function readFromLockfile(searchRoot: string, packageName: string): string | null {
-	// Usar caché si ya parseamos el lockfile para este directorio
-	if (lockfileCache && lockfileCacheRoot === searchRoot) {
-		return lockfileCache.get(packageName) ?? null;
+	// Usar caché si ya parseamos el lockfile para este directorio concreto
+	const cached = lockfileCacheByDir.get(searchRoot);
+	if (cached) {
+		return cached.get(packageName) ?? null;
 	}
 
 	// Intentar cada lockfile en orden de preferencia
@@ -98,9 +101,8 @@ function readFromLockfile(searchRoot: string, packageName: string): string | nul
 
 	if (!map) { return null; }
 
-	// Guardar en caché
-	lockfileCache = map;
-	lockfileCacheRoot = searchRoot;
+	// Guardar en caché para este directorio
+	lockfileCacheByDir.set(searchRoot, map);
 
 	return map.get(packageName) ?? null;
 }

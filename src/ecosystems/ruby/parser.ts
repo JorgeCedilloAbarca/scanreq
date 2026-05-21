@@ -208,10 +208,12 @@ function readGemfileLock(gemfilePath: string): Map<string, string> {
 
 		if (!inSpecs) { continue; }
 
-		// Top-level gems: exactamente 4 espacios de indentación (formato estándar Bundler)
-		// "    rails (7.1.2)"
-		// Puede ser 4 o 6 espacios dependiendo de la versión de Bundler — aceptamos ambos
-		const gemLineMatch = line.match(/^    {1,2}([a-zA-Z0-9_\-\.]+)\s+\(([^)]+)\)/);
+		// Top-level gems en Gemfile.lock tienen indentación de 4 espacios (Bundler clásico)
+		// o 6 espacios (Bundler >= 2.4 en algunos entornos).
+		// Las subdependencias usan 8+ espacios — el regex /^ {4,6}/ las excluye correctamente
+		// porque no captura líneas con 8+ espacios (que empiezan con más de 6 espacios).
+		// Aceptamos exactamente 4 o 6 espacios al inicio de la línea.
+		const gemLineMatch = line.match(/^ {4,6}([a-zA-Z0-9_\-\.]+)\s+\(([^)]+)\)/);
 		if (!gemLineMatch) { continue; }
 
 		const name    = gemLineMatch[1];

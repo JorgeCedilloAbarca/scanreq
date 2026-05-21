@@ -21,8 +21,14 @@ export async function checkPyPI(
 		}
 	}
 
+	// Timeout de 10 s — evita que un PyPI lento bloquee el scan indefinidamente
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
-		const response = await fetch(`https://pypi.org/pypi/${cleanName}/json`);
+		const response = await fetch(`https://pypi.org/pypi/${cleanName}/json`, {
+			signal: controller.signal,
+		});
 		const data = await response.json() as any;
 		const latestVersion = data.info.version;
 
@@ -57,5 +63,7 @@ export async function checkPyPI(
 			majorVersionJump: 0,
 			ecosystem: 'python'
 		};
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }

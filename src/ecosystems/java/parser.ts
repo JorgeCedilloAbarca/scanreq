@@ -194,12 +194,17 @@ async function resolveBomVersions(
 
 	const map = new Map<string, string>();
 
+	// Timeout de 10 s — Maven Central puede tardar en proyectos con BOM grande
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		const groupPath = groupId.replace(/\./g, '/');
 		const pomUrl    = `https://repo1.maven.org/maven2/${groupPath}/${artifactId}/${version}/${artifactId}-${version}.pom`;
 
 		const response = await fetch(pomUrl, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.4 (https://scanreq.com)' }
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			signal: controller.signal,
 		});
 
 		if (!response.ok) {
@@ -242,8 +247,12 @@ async function resolveBomVersions(
 				}
 			}
 		}
-	} catch {
-		// Si falla la descarga, devolver mapa vacío
+	} catch (err: any) {
+		if (err?.name === 'AbortError') {
+			console.warn(`ScanReq: BOM download timed out for ${groupId}:${artifactId}:${version}`);
+		}
+	} finally {
+		clearTimeout(timeoutId);
 	}
 
 	bomCache.set(cacheKey, map);

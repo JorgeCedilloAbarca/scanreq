@@ -81,7 +81,9 @@ export async function checkMaven(
 			latestVersion = installedVersion;
 		}
 
-		const upToDate        = installedVersion !== 'unknown' && installedVersion === latestVersion;
+		// Usar compareSemver en lugar de === para evitar falsos desactualizados
+		// por diferencias de capitalización en sufijos Maven (-Final vs -final, -GA vs -ga).
+		const upToDate        = installedVersion !== 'unknown' && compareSemver(installedVersion, latestVersion) === 0;
 		const majorVersionJump = calcMajorVersionJump(installedVersion, latestVersion);
 
 		let vulnerabilities: Vulnerability[] = [];

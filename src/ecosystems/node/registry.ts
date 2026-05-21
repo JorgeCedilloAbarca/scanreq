@@ -22,11 +22,13 @@ export async function checkNpm(
 		}
 	}
 
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`, {
-			headers: {
-				'User-Agent': 'scanreq-vscode/2.5'
-			}
+			headers: { 'User-Agent': 'scanreq-vscode/2.5' },
+			signal: controller.signal,
 		});
 
 		if (!response.ok) {
@@ -66,5 +68,7 @@ export async function checkNpm(
 			majorVersionJump: 0,
 			ecosystem: 'node'
 		};
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }

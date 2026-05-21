@@ -30,12 +30,14 @@ export async function checkRubyGem(
 		majorVersionJump: 0,
 	};
 
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		const url = `https://rubygems.org/api/v1/gems/${encodeURIComponent(name)}.json`;
 		const response = await fetch(url, {
-			headers: {
-				'User-Agent': 'ScanReq-VSCode-Extension/2.3 (https://scanreq.com)',
-			}
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			signal: controller.signal,
 		});
 
 		if (!response.ok) { return notFound; }
@@ -66,5 +68,7 @@ export async function checkRubyGem(
 		};
 	} catch {
 		return notFound;
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }

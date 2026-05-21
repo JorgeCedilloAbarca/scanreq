@@ -47,12 +47,16 @@ export async function checkMaven(
 		majorVersionJump: 0,
 	};
 
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		const query = `g:${encodeURIComponent(groupId)}+AND+a:${encodeURIComponent(artifactId)}`;
 		const url   = `https://search.maven.org/solrsearch/select?q=${query}&rows=1&wt=json`;
 
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.4 (https://scanreq.com)' }
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			signal: controller.signal,
 		});
 
 		if (!response.ok) { return notFound; }
@@ -104,6 +108,8 @@ export async function checkMaven(
 		};
 	} catch {
 		return notFound;
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 
@@ -124,12 +130,16 @@ export async function versionExistsInMaven(
 	artifactId: string,
 	version: string
 ): Promise<boolean> {
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		const query = `g:${encodeURIComponent(groupId)}+AND+a:${encodeURIComponent(artifactId)}+AND+v:${encodeURIComponent(version)}`;
 		const url   = `https://search.maven.org/solrsearch/select?q=${query}&core=gav&rows=1&wt=json`;
 
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.4 (https://scanreq.com)' }
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			signal: controller.signal,
 		});
 
 		if (!response.ok) { return false; }
@@ -139,6 +149,8 @@ export async function versionExistsInMaven(
 		return Array.isArray(docs) && docs.length > 0;
 	} catch {
 		return false;
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 
@@ -149,12 +161,16 @@ export async function versionExistsInMaven(
  * Ordena por semver descendente y devuelve la más alta.
  */
 async function findLatestSemverVersion(groupId: string, artifactId: string): Promise<string | null> {
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		const query = `g:${encodeURIComponent(groupId)}+AND+a:${encodeURIComponent(artifactId)}`;
 		const url   = `https://search.maven.org/solrsearch/select?q=${query}&core=gav&rows=50&wt=json`;
 
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.4 (https://scanreq.com)' }
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			signal: controller.signal,
 		});
 
 		if (!response.ok) { return null; }
@@ -174,6 +190,8 @@ async function findLatestSemverVersion(groupId: string, artifactId: string): Pro
 		return versions[0];
 	} catch {
 		return null;
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 

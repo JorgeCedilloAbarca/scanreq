@@ -40,12 +40,14 @@ export async function checkPackagist(
 	// Packagist requiere el formato "vendor/package"
 	if (!name.includes('/')) { return notFound; }
 
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		const url = `https://repo.packagist.org/p2/${name}.json`;
 		const response = await fetch(url, {
-			headers: {
-				'User-Agent': 'ScanReq-VSCode-Extension/2.3 (https://scanreq.com)',
-			}
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			signal: controller.signal,
 		});
 
 		if (!response.ok) { return notFound; }
@@ -83,11 +85,10 @@ export async function checkPackagist(
 		};
 	} catch {
 		return notFound;
+	} finally {
+		clearTimeout(timeoutId);
 	}
-}
-
-/**
- * Encuentra el primer release estable en la lista de Packagist.
+} en la lista de Packagist.
  * Packagist devuelve releases de más reciente a más antiguo.
  * Excluye: dev-, alpha, beta, RC.
  */
@@ -111,3 +112,9 @@ function findLatestStable(releases: any[]): any | null {
 function normalizeVersion(version: string): string {
 	return version.startsWith('v') ? version.slice(1) : version;
 }
+
+/**
+ * Encuentra el primer release estable en la lista de Packagist.
+ * Packagist devuelve releases de más reciente a más antiguo.
+ * Excluye: dev-, alpha, beta, RC.
+ */

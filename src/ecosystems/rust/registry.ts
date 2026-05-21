@@ -15,13 +15,17 @@ export async function checkCrate(
 ): Promise<PackageResult> {
 	const effectiveVersion = specifiedVersion;
 
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		// crates.io API: GET https://crates.io/api/v1/crates/{name}
 		const response = await fetch(`https://crates.io/api/v1/crates/${encodeURIComponent(packageName)}`, {
 			headers: {
 				'User-Agent': CRATES_USER_AGENT,
 				'Accept': 'application/json'
-			}
+			},
+			signal: controller.signal,
 		});
 
 		if (!response.ok) {
@@ -62,5 +66,7 @@ export async function checkCrate(
 			majorVersionJump: 0,
 			ecosystem: 'rust'
 		};
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }

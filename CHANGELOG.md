@@ -2,6 +2,20 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.6.1] - 2026-05-22
+
+### Fixed
+- **Activar Pro button broken in webview** — the button used `href='command:scanreq.activateLicense'` which is silently blocked by the strict CSP. Fixed using `acquireVsCodeApi().postMessage` in the webview and `onDidReceiveMessage` in the panel.
+- **Ruby: Gemfile.lock lockfile ignored in modern Bundler** — regex accepted only 4 or 8 spaces indentation. Bundler >= 2.4 uses 6-space indentation for top-level gems, causing all lockfile versions to be silently ignored. Fixed to accept 4–6 spaces.
+- **Java/Gradle: BOM download could hang scan indefinitely** — `resolveBomVersions()` had no timeout when downloading Spring Boot BOM from Maven Central. Added 10s `AbortController` timeout.
+- **Node.js: lockfile cache race condition in monorepos** — a single global cache variable caused parallel scans of multiple `package.json` files to overwrite each other's lockfile data. Replaced with a per-directory `Map`.
+- **Python: PyPI fetch had no timeout** — a slow PyPI endpoint could hang the Python scan indefinitely. Added 10s `AbortController` timeout.
+- **All registries: fetch timeouts added** — Node.js (npm), Rust (crates.io), PHP (Packagist), Ruby (RubyGems), and Java (Maven Central, 3 endpoints) had no timeout on their registry fetch calls. All now abort after 10s.
+- **Go: private/unindexed modules now distinguished from errors** — a 404 or 410 from the Go module proxy (private or unlisted module) now shows `Private / not indexed` and `upToDate: true` instead of `Not found` and a false outdated warning.
+- **Go: explicit isPro guard on CVE check** — added consistent guard matching all other ecosystems. No functional change since Go always has exact versions, but prevents future regressions.
+- **Java: hardcoded Spanish strings** — `'Versión dinámica'`, `'Repositorio privado'`, `'No disponible'` replaced with English equivalents for consistency with non-Spanish VS Code installs.
+- **Java: `upToDate` now uses `compareSemver`** — strict `===` comparison failed for versions with differing suffix capitalisation (e.g. `3.2.1-Final` vs `3.2.1-final`), causing false outdated warnings.
+
 ## [2.6.0] - 2026-05-21
 
 ### Added

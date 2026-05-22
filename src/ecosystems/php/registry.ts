@@ -88,7 +88,10 @@ export async function checkPackagist(
 	} finally {
 		clearTimeout(timeoutId);
 	}
-} en la lista de Packagist.
+}
+
+/**
+ * Encuentra el primer release estable en la lista de Packagist.
  * Packagist devuelve releases de más reciente a más antiguo.
  * Excluye: dev-, alpha, beta, RC.
  */

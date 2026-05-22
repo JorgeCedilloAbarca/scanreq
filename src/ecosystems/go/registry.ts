@@ -7,17 +7,40 @@ export async function checkGoModule(
 	exactVersion: boolean,
 	isPro: boolean
 ): Promise<PackageResult> {
+	// Timeout de 10 s — Go proxy puede tardar con módulos poco accedidos
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	try {
 		// Go module proxy: GET https://proxy.golang.org/{module}/@latest
 		// El nombre del módulo debe ir en lowercase para el proxy
 		const encodedModule = encodeModulePath(moduleName);
 		const response = await fetch(
 			`https://proxy.golang.org/${encodedModule}/@latest`,
-			{ headers: { 'Accept': 'application/json' } }
+			{
+				headers: { 'Accept': 'application/json' },
+				signal: controller.signal,
+			}
 		);
 
+		// Fix #12: distinguir módulo privado/no indexado (410 Gone o 404)
+		// de errores de red o del proxy (5xx).
+		// El Go proxy devuelve 410 Gone para módulos privados o no indexados,
+		// y 404 para rutas de módulo que no existen en absoluto.
 		if (!response.ok) {
-			throw new Error(`Go proxy responded ${response.status}`);
+			const isPrivateOrUnknown = response.status === 404 || response.status === 410;
+			const latestVersion = isPrivateOrUnknown ? 'Private / not indexed' : 'Not found';
+			return {
+				name: moduleName,
+				installedVersion: specifiedVersion,
+				latestVersion,
+				upToDate: isPrivateOrUnknown, // no mostrar como desactualizado si es privado
+				exactVersion,
+				vulnerabilities: [],
+				detectedByTool: false,
+				majorVersionJump: 0,
+				ecosystem: 'go',
+			};
 		}
 
 		const data = await response.json() as any;
@@ -26,8 +49,12 @@ export async function checkGoModule(
 		const latestRaw: string = data.Version ?? 'unknown';
 		const latestVersion = latestRaw.startsWith('v') ? latestRaw.slice(1) : latestRaw;
 
-		// CVEs: en Free solo para versiones exactas (en Go siempre lo son)
-		const vulnerabilities = specifiedVersion !== 'unknown'
+		// Fix #2: guard isPro consistente con el resto de ecosistemas.
+		// En Go todas las versiones de go.mod son exactas por definición,
+		// así que en Free canCheckCVEs siempre será true mientras exactVersion=true.
+		// El guard explícito protege ante futuros cambios y es consistente con el resto.
+		const canCheckCVEs = exactVersion || isPro;
+		const vulnerabilities = canCheckCVEs && specifiedVersion !== 'unknown'
 			? await checkCVEs(moduleName, `v${specifiedVersion}`, 'Go')
 			: [];
 
@@ -42,9 +69,12 @@ export async function checkGoModule(
 			vulnerabilities,
 			detectedByTool: false,
 			majorVersionJump: calcMajorVersionJump(specifiedVersion, latestVersion),
-			ecosystem: 'go'
+			ecosystem: 'go',
 		};
-	} catch {
+	} catch (err: any) {
+		if (err?.name === 'AbortError') {
+			console.warn(`ScanReq: Go proxy timed out for ${moduleName}`);
+		}
 		return {
 			name: moduleName,
 			installedVersion: specifiedVersion,
@@ -54,8 +84,10 @@ export async function checkGoModule(
 			vulnerabilities: [],
 			detectedByTool: false,
 			majorVersionJump: 0,
-			ecosystem: 'go'
+			ecosystem: 'go',
 		};
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 

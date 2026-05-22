@@ -54,8 +54,20 @@ export function parseRequirements(content: string): ParsedPackage[] {
 			}
 
 			const isExact = fullSpec.startsWith('==') && !fullSpec.includes(',');
-			const versionNumber = fullSpec.replace(/^[><!~]=?/, '').replace(/^==/, '').trim();
 
-			return { name, version: versionNumber, exactVersion: isExact };
+			// Fix F4: para specifiers compuestos como ">=1.0,<2.0", extraer solo
+			// el primer número de versión. Antes se hacía replace del primer operador
+			// y quedaba "1.0,<2.0" como versión — basura que se mostraba en la UI.
+			// Ahora: extraer el primer número de versión con regex.
+			if (isExact) {
+				const versionNumber = fullSpec.replace(/^==/, '').trim();
+				return { name, version: versionNumber, exactVersion: true };
+			}
+
+			// No exacto: extraer la primera versión numérica del specifier
+			const versionMatch = fullSpec.match(/(\d+(?:\.\d+)*)/);
+			const versionNumber = versionMatch ? versionMatch[1] : 'unknown';
+
+			return { name, version: versionNumber, exactVersion: false };
 		});
 }

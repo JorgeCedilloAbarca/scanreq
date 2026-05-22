@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { t } from './i18n';
 
 const LICENSE_KEY        = 'scanreq.licenseToken';
 const IS_ADMIN_KEY       = 'scanreq.isAdmin';
@@ -49,12 +50,18 @@ export async function revalidateLicenseIfNeeded(
 
 	if (now - lastValidated < REVALIDATION_INTERVAL_MS) { return; }
 
+	// Fix S2: AbortController con timeout de 10s — evita que un backend caído
+	// bloquee el arranque de la extensión indefinidamente.
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
+
 	// Han pasado más de 24 horas — revalidar silenciosamente
 	try {
 		const response = await fetch(BACKEND_URL, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ token })
+			body: JSON.stringify({ token }),
+			signal: controller.signal,
 		});
 
 		if (!response.ok) {
@@ -73,20 +80,23 @@ export async function revalidateLicenseIfNeeded(
 			await context.globalState.update(LICENSE_KEY, undefined);
 			await context.globalState.update(IS_ADMIN_KEY, undefined);
 			await context.globalState.update(LAST_VALIDATED_KEY, undefined);
+			// Fix U2: mensajes bilingües en lugar de mezclar español e inglés
 			vscode.window.showWarningMessage(
-				'ScanReq: Tu licencia Pro ha sido desactivada. Visita scanreq.com para más información.',
-				'Recover token',
-				'Ir a scanreq.com'
+				t('licenseRevoked'),
+				t('licenseRecoverToken'),
+				t('licenseGoToSite')
 			).then(action => {
-				if (action === 'Recover token') {
+				if (action === t('licenseRecoverToken')) {
 					vscode.env.openExternal(vscode.Uri.parse('https://scanreq.com/recover'));
-				} else if (action === 'Ir a scanreq.com') {
+				} else if (action === t('licenseGoToSite')) {
 					vscode.env.openExternal(vscode.Uri.parse('https://scanreq.com'));
 				}
 			});
 		}
 	} catch {
-		// Sin conexión — no hacer nada, reintentar en el próximo arranque
+		// Sin conexión o timeout — no hacer nada, reintentar en el próximo arranque
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 
@@ -97,15 +107,22 @@ export async function activateLicense(
 	const trimmed = token.trim();
 
 	if (!trimmed) {
-		return { success: false, message: 'El token no puede estar vacío.' };
+		// Fix U3: mensaje bilingüe
+		return { success: false, message: t('licenseTokenEmpty') };
 	}
+
+	// Fix S3: AbortController con timeout de 15s — evita que el usuario
+	// se quede esperando indefinidamente tras introducir su token.
+	const controller = new AbortController();
+	const timeoutId  = setTimeout(() => controller.abort(), 15_000);
 
 	// Validación contra backend — todos los tokens pasan por aquí, sin excepción.
 	try {
 		const response = await fetch(BACKEND_URL, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ token: trimmed })
+			body: JSON.stringify({ token: trimmed }),
+			signal: controller.signal,
 		});
 
 		if (response.ok) {
@@ -116,29 +133,31 @@ export async function activateLicense(
 				// Registrar timestamp de activación como primera validación
 				await context.globalState.update(LAST_VALIDATED_KEY, Date.now());
 				const welcome = data.isAdmin === true
-					? 'Licencia Admin activada correctamente.'
-					: 'Licencia Pro activada correctamente. ¡Bienvenido!';
+					? t('licenseAdminActivated')
+					: t('licenseProActivated');
 				return { success: true, message: welcome };
 			} else {
-				const msg = data.message ?? 'Token inválido o ya usado.';
+				const msg = data.message ?? t('licenseInvalidToken');
 				return {
 					success: false,
-					message: `${msg} ¿Perdiste tu token? Recupéralo en scanreq.com/recover`
+					message: `${msg} ${t('licenseLostToken')}`
 				};
 			}
 		} else if (response.status === 404) {
 			return {
 				success: false,
-				message: 'Token no encontrado. Revisa que lo hayas copiado correctamente. ¿Perdiste tu token? Recupéralo en scanreq.com/recover'
+				message: `${t('licenseNotFound')} ${t('licenseLostToken')}`
 			};
 		} else {
-			return { success: false, message: `Error del servidor (${response.status}). Inténtalo de nuevo.` };
+			return { success: false, message: t('licenseServerError').replace('{status}', String(response.status)) };
 		}
 	} catch {
 		return {
 			success: false,
-			message: 'No se pudo conectar con el servidor de licencias. Comprueba tu conexión a Internet.'
+			message: t('licenseNoConnection')
 		};
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 

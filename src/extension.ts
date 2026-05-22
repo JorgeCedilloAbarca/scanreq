@@ -77,6 +77,9 @@ export function activate(context: vscode.ExtensionContext) {
 	let activePanel: vscode.WebviewPanel | undefined;
 	let scanInProgress = false;
 
+	// Fix R3: timer para debounce del watcher — se limpia en deactivate()
+	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
 	const getWorkspaceRoot = (): string | null => {
 		const folders = vscode.workspace.workspaceFolders;
 		return folders ? folders[0].uri.fsPath : null;
@@ -171,9 +174,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scanreq.activateLicense', async () => {
+			// Fix U1: mensajes bilingües via i18n
 			const token = await vscode.window.showInputBox({
-				title: 'ScanReq — Activar Plan Pro',
-				prompt: 'Introduce tu token de licencia',
+				title: t('licenseActivateTitle'),
+				prompt: t('licenseActivatePrompt'),
 				placeHolder: 'SCANREQ-PRO-XXXX-XXXX-XXXX',
 				ignoreFocusOut: true,
 				password: true
@@ -191,26 +195,36 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scanreq.deactivateLicense', async () => {
+			// Fix U1: mensajes bilingües via i18n
 			const confirm = await vscode.window.showWarningMessage(
-				'¿Desactivar el Plan Pro de ScanReq? Perderás acceso a las funciones avanzadas.',
-				'Desactivar', 'Cancelar'
+				t('licenseDeactivateConfirm'),
+				t('licenseDeactivateBtn'), t('licenseCancelBtn')
 			);
-			if (confirm !== 'Desactivar') { return; }
+			if (confirm !== t('licenseDeactivateBtn')) { return; }
 			await deactivateLicense(context);
-			vscode.window.showInformationMessage('ScanReq: Plan Pro desactivado.');
+			vscode.window.showInformationMessage(t('licenseDeactivated'));
 			runScan(false);
 		})
 	);
 
-	// Watcher
+	// Fix R3: Watcher con debounce de 2 segundos.
+	// Sin debounce, un npm install dispara múltiples scans en ráfaga porque
+	// modifica package.json + package-lock.json + archivos en node_modules.
+	// El primer scan se ejecuta con archivos a medio instalar, dando resultados
+	// incorrectos temporales. Con debounce, esperamos a que la actividad termine.
 	const watchGlob = `**/{${getAllWatchPatterns().join(',')}}`;
 	const watcher   = vscode.workspace.createFileSystemWatcher(watchGlob);
-	watcher.onDidChange(() => runScan(true));
-	watcher.onDidCreate(() => runScan(true));
-	watcher.onDidDelete(() => runScan(true));
+	const debouncedScan = () => {
+		if (debounceTimer) { clearTimeout(debounceTimer); }
+		debounceTimer = setTimeout(() => runScan(true), 2000);
+	};
+	watcher.onDidChange(debouncedScan);
+	watcher.onDidCreate(debouncedScan);
+	watcher.onDidDelete(debouncedScan);
 	context.subscriptions.push(watcher);
 
-	// Revalidación periódica silenciosa (cada 7 días)
+	// Fix U4: comentario actualizado — revalidación cada 24 horas, no 7 días
+	// Revalidación periódica silenciosa (cada 24 horas)
 	// No bloquea el arranque — se ejecuta en background
 	revalidateLicenseIfNeeded(context).then(() => {
 		// Relanzar scan si el estado de licencia cambió durante la revalidación

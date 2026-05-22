@@ -22,7 +22,7 @@ async function fetchPackagistLatest(name: string): Promise<PackagistRelease | nu
 	try {
 		const response = await fetch(
 			`https://repo.packagist.org/p2/${key}.json`,
-			{ headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.3 (https://scanreq.com)' } }
+			{ headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.6 (https://scanreq.com)' } }
 		);
 		if (!response.ok) {
 			packagistCache.set(key, null);
@@ -75,7 +75,7 @@ function compareVersions(a: string, b: string): number {
 
 /**
  * Comprueba si una versión instalada satisface un specifier Composer.
- * Soporta: ^, ~, >=, <=, >, <, =, exacto, *, OR con ||
+ * Soporta: ^, ~, >=, <=, >, <, =, exacto, *, OR con || o |
  *
  * Composer usa semántica diferente de npm para ^ y ~ cuando el major es 0:
  * ^0.3.0 → >=0.3.0 <0.4.0 (no <1.0.0 como en npm)
@@ -85,10 +85,16 @@ function satisfiesComposerSpec(installed: string, spec: string): boolean {
 	const s = spec.trim();
 	if (s === '*' || s === '') { return true; }
 
-	// OR: "^1.0|^2.0"
-	if (s.includes('||') || s.includes(' | ')) {
-		const parts = s.split(/\|\||\s\|\s/).map(p => p.trim());
-		return parts.some(p => satisfiesComposerSpec(installed, p));
+	// Fix F2: OR — Composer soporta || y | simple como operador OR.
+	// Antes solo se manejaba || y " | " (con espacios), dejando "^6.0|^7.0"
+	// sin separar — se pasaba entero, fallaba el parsing, y satisfiesComposerSpec
+	// devolvía true por defecto, ocultando conflictos reales.
+	// Ahora: split por uno o más pipes, con o sin espacios alrededor.
+	if (s.includes('|')) {
+		const parts = s.split(/\s*\|{1,2}\s*/).map(p => p.trim()).filter(Boolean);
+		if (parts.length > 1) {
+			return parts.some(p => satisfiesComposerSpec(installed, p));
+		}
 	}
 
 	// AND: ">=1.0.0 <2.0.0"
@@ -210,9 +216,9 @@ export async function runCompatibilityAnalysis(
 					: locale === 'es'
 						? 'Versión más reciente disponible'
 						: 'Newer version available',
-					migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0),
-				});
-						} else if (pkg.upToDate && pkg.vulnerabilities.length > 0) {
+				migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0),
+			});
+		} else if (pkg.upToDate && pkg.vulnerabilities.length > 0) {
 			// Paquete al día según el registry pero con CVEs activos.
 			// Si OSV reporta fixedVersion, sugerirla directamente.
 			const fixedVersions = pkg.vulnerabilities
@@ -251,8 +257,8 @@ export async function runCompatibilityAnalysis(
 					migrationRisk: 'unpatched',
 				});
 			}
-				}
-		});
+		}
+	});
 
 	await Promise.all(analysisPromises);
 

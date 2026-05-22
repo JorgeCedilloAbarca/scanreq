@@ -23,10 +23,8 @@ export async function checkGoModule(
 			}
 		);
 
-		// Fix #12: distinguir módulo privado/no indexado (410 Gone o 404)
+		// Distinguir módulo privado/no indexado (410 Gone o 404)
 		// de errores de red o del proxy (5xx).
-		// El Go proxy devuelve 410 Gone para módulos privados o no indexados,
-		// y 404 para rutas de módulo que no existen en absoluto.
 		if (!response.ok) {
 			const isPrivateOrUnknown = response.status === 404 || response.status === 410;
 			const latestVersion = isPrivateOrUnknown ? 'Private / not indexed' : 'Not found';
@@ -40,6 +38,7 @@ export async function checkGoModule(
 				detectedByTool: false,
 				majorVersionJump: 0,
 				ecosystem: 'go',
+				cveCheckFailed: false,
 			};
 		}
 
@@ -49,14 +48,19 @@ export async function checkGoModule(
 		const latestRaw: string = data.Version ?? 'unknown';
 		const latestVersion = latestRaw.startsWith('v') ? latestRaw.slice(1) : latestRaw;
 
-		// Fix #2: guard isPro consistente con el resto de ecosistemas.
 		// En Go todas las versiones de go.mod son exactas por definición,
 		// así que en Free canCheckCVEs siempre será true mientras exactVersion=true.
-		// El guard explícito protege ante futuros cambios y es consistente con el resto.
 		const canCheckCVEs = exactVersion || isPro;
-		const vulnerabilities = canCheckCVEs && specifiedVersion !== 'unknown'
-			? await checkCVEs(moduleName, `v${specifiedVersion}`, 'Go')
-			: [];
+		let cveCheckFailed = false;
+
+		let vulnerabilities: import("../types").Vulnerability[];
+		if (canCheckCVEs && specifiedVersion !== 'unknown') {
+			const cveResult = await checkCVEs(moduleName, `v${specifiedVersion}`, 'Go');
+			vulnerabilities = cveResult.vulnerabilities;
+			cveCheckFailed = cveResult.failed;
+		} else {
+			vulnerabilities = [];
+		}
 
 		return {
 			name: moduleName,
@@ -70,6 +74,7 @@ export async function checkGoModule(
 			detectedByTool: false,
 			majorVersionJump: calcMajorVersionJump(specifiedVersion, latestVersion),
 			ecosystem: 'go',
+			cveCheckFailed,
 		};
 	} catch (err: any) {
 		if (err?.name === 'AbortError') {
@@ -85,6 +90,7 @@ export async function checkGoModule(
 			detectedByTool: false,
 			majorVersionJump: 0,
 			ecosystem: 'go',
+			cveCheckFailed: false,
 		};
 	} finally {
 		clearTimeout(timeoutId);

@@ -13,11 +13,18 @@ export function updateStatusBar(statusBar: vscode.StatusBarItem, results: ScanRe
 
 	const hasCVEs = allPackages.some(p => p.vulnerabilities.length > 0);
 	const hasOutdated = allPackages.some(p => !p.upToDate);
+	const hasCveCheckFailed = allPackages.some(p => p.cveCheckFailed);
 
 	if (hasCVEs) {
 		statusBar.text = t('statusCVEs');
 		statusBar.tooltip = t('statusTooltipCVEs');
 		statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+	} else if (hasCveCheckFailed) {
+		// OSV no respondió para al menos un paquete — los resultados de seguridad
+		// pueden estar incompletos. Mostrar warning naranja en lugar de verde.
+		statusBar.text = t('statusCveCheckFailed');
+		statusBar.tooltip = t('statusTooltipCveCheckFailed');
+		statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
 	} else if (hasOutdated) {
 		statusBar.text = t('statusOutdated');
 		statusBar.tooltip = t('statusTooltipOutdated');

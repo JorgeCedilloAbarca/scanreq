@@ -23,6 +23,11 @@ export interface PackageResult {
 	detectedByTool: boolean;
 	ecosystem: EcosystemId;
 	majorVersionJump: number;
+	// true cuando la consulta a OSV falló (timeout, 429, 5xx) y no pudimos
+	// confirmar si hay CVEs. Diferente de vulnerabilities.length === 0 (que
+	// significa "confirmado sin CVEs"). Sin este flag, un fallo de OSV se
+	// muestra como "✓ Sin CVEs" — un falso negativo de seguridad.
+	cveCheckFailed: boolean;
 }
 
 // ─── Compatibilidad (Pro) ─────────────────────────────────────────────────────

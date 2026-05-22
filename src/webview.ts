@@ -61,10 +61,17 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 	const outdated = packages.filter(p => !p.upToDate);
 	const inexact = packages.filter(p => !p.exactVersion);
 	const detectedByTool = packages.filter(p => p.detectedByTool);
+	const cveChecksFailed = packages.filter(p => p.cveCheckFailed);
 
 	const insights: { type: string; message: string }[] = [];
 
 	if (locale === 'es') {
+		if (cveChecksFailed.length > 0) {
+			insights.push({
+				type: 'warning',
+				message: `⚠ La verificación de CVEs falló para ${cveChecksFailed.length} paquete${cveChecksFailed.length > 1 ? 's' : ''} (OSV no respondió). Los resultados de seguridad pueden estar incompletos — reintenta el scan.`
+			});
+		}
 		if (criticalCVEs.length > 0) {
 			insights.push({
 				type: 'critical',
@@ -109,6 +116,12 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 			});
 		}
 	} else {
+		if (cveChecksFailed.length > 0) {
+			insights.push({
+				type: 'warning',
+				message: `⚠ CVE verification failed for ${cveChecksFailed.length} package${cveChecksFailed.length > 1 ? 's' : ''} (OSV did not respond). Security results may be incomplete — retry the scan.`
+			});
+		}
 		if (criticalCVEs.length > 0) {
 			insights.push({
 				type: 'critical',
@@ -175,7 +188,6 @@ function generateCompatibilitySection(report: CompatibilityReport, locale: strin
 	}
 
 	if (conflicts.length === 0 && !toolUnavailable) {
-		const hasRealAnalysis = report.conflicts !== undefined;
 		html += `<div class="insight insight-ok">
 			${locale === 'es'
 				? '✓ No se detectaron conflictos de dependencias entre los paquetes instalados.'
@@ -315,11 +327,14 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 		// Fix #3: "— No analizado" era ambiguo — el usuario podía interpretarlo como
 		// "sin riesgo". Ahora es un badge naranja explícito que deja claro que la
 		// versión instalada no está fijada y por tanto los CVEs no han sido verificados.
+		// Prioridad: CVEs encontrados > fallo de verificación > sin CVEs confirmado > no verificado
 		const securityBadge = pkg.vulnerabilities.length > 0
 			? `<span class="badge vuln">⚠ ${pkg.vulnerabilities.length} CVE${pkg.vulnerabilities.length > 1 ? 's' : ''}</span>`
-			: (pkg.exactVersion || pkg.detectedByTool)
-				? `<span class="badge safe">${t('badgeNoCVEs')}</span>`
-				: `<span class="badge unverified" title="${locale === 'es' ? 'Versión no fijada — no se puede verificar si esta versión exacta tiene CVEs conocidos. Fija la versión o activa el Plan Pro.' : 'Version not pinned — cannot verify if this exact version has known CVEs. Pin the version or activate the Pro plan.'}">⚠ ${locale === 'es' ? 'No verificado' : 'Unverified'}</span>`;
+			: pkg.cveCheckFailed
+				? `<span class="badge cve-failed" title="${locale === 'es' ? 'La consulta a OSV falló (timeout o error de servidor). No se pudo confirmar si esta versión tiene CVEs. Reintenta el scan.' : 'OSV query failed (timeout or server error). Could not confirm if this version has CVEs. Retry the scan.'}">⚠ ${locale === 'es' ? 'Error CVE' : 'CVE Error'}</span>`
+				: (pkg.exactVersion || pkg.detectedByTool)
+					? `<span class="badge safe">${t('badgeNoCVEs')}</span>`
+					: `<span class="badge unverified" title="${locale === 'es' ? 'Versión no fijada — no se puede verificar si esta versión exacta tiene CVEs conocidos. Fija la versión o activa el Plan Pro.' : 'Version not pinned — cannot verify if this exact version has known CVEs. Pin the version or activate the Pro plan.'}">⚠ ${locale === 'es' ? 'No verificado' : 'Unverified'}</span>`;
 
 		const vulnDetails = pkg.vulnerabilities.map(v => `
 			<div class="vuln-detail">
@@ -618,6 +633,8 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			.badge.unknown    { background: rgba(147,112,219,0.15); color: #9370db; font-style: italic; }
 			/* Fix #3: badge naranja explícito para versiones no fijadas sin análisis CVE */
 			.badge.unverified { background: rgba(255,140,0,0.15); color: #ff8c00; border: 1px solid rgba(255,140,0,0.3); cursor: help; }
+			/* Badge para cuando la consulta a OSV falló — rojo oscuro, distinto de vuln */
+			.badge.cve-failed { background: rgba(180,0,0,0.15); color: #cc4444; border: 1px solid rgba(180,0,0,0.3); cursor: help; }
 			.badge.major   { background: rgba(255,100,50,0.15); color: #ff6432; border: 1px solid rgba(255,100,50,0.3); margin-left: 6px; font-size: 10px; }
 			.phase-header {
 				display: flex; align-items: baseline; gap: 10px;

@@ -5,7 +5,7 @@ import { PackageResult, calcMajorVersionJump } from '../types';
  * crates.io requiere un User-Agent descriptivo por política.
  * https://crates.io/policies#crawlers
  */
-const CRATES_USER_AGENT = 'scanreq-vscode/2.2 (https://scanreq.com)';
+const CRATES_USER_AGENT = 'scanreq-vscode/2.6 (https://scanreq.com)';
 
 export async function checkCrate(
 	packageName: string,
@@ -37,9 +37,16 @@ export async function checkCrate(
 
 		// CVEs: en Free solo para versiones exactas
 		const canCheckCVEs = exactVersion || isPro;
-		const vulnerabilities = canCheckCVEs && effectiveVersion !== 'unknown'
-			? await checkCVEs(packageName, effectiveVersion, 'crates.io')
-			: [];
+		let cveCheckFailed = false;
+
+		let vulnerabilities: import("../types").Vulnerability[];
+		if (canCheckCVEs && effectiveVersion !== 'unknown') {
+			const cveResult = await checkCVEs(packageName, effectiveVersion, 'crates.io');
+			vulnerabilities = cveResult.vulnerabilities;
+			cveCheckFailed = cveResult.failed;
+		} else {
+			vulnerabilities = [];
+		}
 
 		return {
 			name: packageName,
@@ -50,9 +57,10 @@ export async function checkCrate(
 				: false,
 			exactVersion,
 			vulnerabilities,
-			detectedByTool: false,  // Rust no necesita detección via tool — Cargo.toml siempre tiene versión
+			detectedByTool: false,
 			majorVersionJump: calcMajorVersionJump(effectiveVersion, latestVersion),
-			ecosystem: 'rust'
+			ecosystem: 'rust',
+			cveCheckFailed,
 		};
 	} catch {
 		return {
@@ -64,7 +72,8 @@ export async function checkCrate(
 			vulnerabilities: [],
 			detectedByTool: false,
 			majorVersionJump: 0,
-			ecosystem: 'rust'
+			ecosystem: 'rust',
+			cveCheckFailed: false,
 		};
 	} finally {
 		clearTimeout(timeoutId);

@@ -28,6 +28,7 @@ export async function checkRubyGem(
 		detectedByTool: false,
 		ecosystem: ECOSYSTEM,
 		majorVersionJump: 0,
+		cveCheckFailed: false,
 	};
 
 	const controller = new AbortController();
@@ -36,7 +37,7 @@ export async function checkRubyGem(
 	try {
 		const url = `https://rubygems.org/api/v1/gems/${encodeURIComponent(name)}.json`;
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.6 (https://scanreq.com)' },
 			signal: controller.signal,
 		});
 
@@ -51,8 +52,11 @@ export async function checkRubyGem(
 		const majorVersionJump = calcMajorVersionJump(installedVersion, latestVersion);
 
 		let vulnerabilities: Vulnerability[] = [];
+		let cveCheckFailed = false;
 		if (exactVersion || isPro) {
-			vulnerabilities = await checkCVEs(name, installedVersion, OSV_ECOSYSTEM);
+			const cveResult = await checkCVEs(name, installedVersion, OSV_ECOSYSTEM);
+			vulnerabilities = cveResult.vulnerabilities;
+			cveCheckFailed = cveResult.failed;
 		}
 
 		return {
@@ -65,6 +69,7 @@ export async function checkRubyGem(
 			detectedByTool: false,
 			ecosystem: ECOSYSTEM,
 			majorVersionJump,
+			cveCheckFailed,
 		};
 	} catch {
 		return notFound;

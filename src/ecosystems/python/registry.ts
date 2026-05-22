@@ -34,9 +34,16 @@ export async function checkPyPI(
 
 		// CVEs: en Free solo para exactas. En Pro también para versiones detectadas por pip
 		const canCheckCVEs = exactVersion || (isPro && detectedByTool);
-		const vulnerabilities = canCheckCVEs
-			? await checkCVEs(cleanName, effectiveVersion, 'PyPI')
-			: [];
+		let cveCheckFailed = false;
+
+		let vulnerabilities: import("../types").Vulnerability[];
+		if (canCheckCVEs) {
+			const cveResult = await checkCVEs(cleanName, effectiveVersion, 'PyPI');
+			vulnerabilities = cveResult.vulnerabilities;
+			cveCheckFailed = cveResult.failed;
+		} else {
+			vulnerabilities = [];
+		}
 
 		return {
 			name: packageName,
@@ -49,7 +56,8 @@ export async function checkPyPI(
 			vulnerabilities,
 			detectedByTool,
 			majorVersionJump: calcMajorVersionJump(effectiveVersion, latestVersion),
-			ecosystem: 'python'
+			ecosystem: 'python',
+			cveCheckFailed,
 		};
 	} catch {
 		return {
@@ -61,7 +69,8 @@ export async function checkPyPI(
 			vulnerabilities: [],
 			detectedByTool,
 			majorVersionJump: 0,
-			ecosystem: 'python'
+			ecosystem: 'python',
+			cveCheckFailed: false,
 		};
 	} finally {
 		clearTimeout(timeoutId);

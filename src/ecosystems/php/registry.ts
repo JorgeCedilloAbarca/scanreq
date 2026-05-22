@@ -1,4 +1,4 @@
-import { PackageResult, EcosystemId } from '../types';
+import { PackageResult, EcosystemId, Vulnerability } from '../types';
 import { checkCVEs } from '../../osv';
 import { calcMajorVersionJump } from '../types';
 
@@ -35,6 +35,7 @@ export async function checkPackagist(
 		detectedByTool: false,
 		ecosystem: ECOSYSTEM,
 		majorVersionJump: 0,
+		cveCheckFailed: false,
 	};
 
 	// Packagist requiere el formato "vendor/package"
@@ -46,7 +47,7 @@ export async function checkPackagist(
 	try {
 		const url = `https://repo.packagist.org/p2/${name}.json`;
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.6 (https://scanreq.com)' },
 			signal: controller.signal,
 		});
 
@@ -67,9 +68,12 @@ export async function checkPackagist(
 		const majorVersionJump = calcMajorVersionJump(installedVersion, latestVersion);
 
 		// CVEs: solo si la versión es exacta (Free) o si es Pro
-		let vulnerabilities: import('../types').Vulnerability[] = [];
+		let vulnerabilities: Vulnerability[] = [];
+		let cveCheckFailed = false;
 		if (exactVersion || isPro) {
-			vulnerabilities = await checkCVEs(name, installedVersion, OSV_ECOSYSTEM);
+			const cveResult = await checkCVEs(name, installedVersion, OSV_ECOSYSTEM);
+			vulnerabilities = cveResult.vulnerabilities;
+			cveCheckFailed = cveResult.failed;
 		}
 
 		return {
@@ -82,6 +86,7 @@ export async function checkPackagist(
 			detectedByTool: false,
 			ecosystem: ECOSYSTEM,
 			majorVersionJump,
+			cveCheckFailed,
 		};
 	} catch {
 		return notFound;
@@ -115,9 +120,3 @@ function findLatestStable(releases: any[]): any | null {
 function normalizeVersion(version: string): string {
 	return version.startsWith('v') ? version.slice(1) : version;
 }
-
-/**
- * Encuentra el primer release estable en la lista de Packagist.
- * Packagist devuelve releases de más reciente a más antiguo.
- * Excluye: dev-, alpha, beta, RC.
- */

@@ -24,8 +24,6 @@ export async function checkMaven(
 	hasPrivateRepos: boolean = false
 ): Promise<PackageResult> {
 	// Determinar label según el motivo de no encontrar el artefacto.
-	// Usamos strings en inglés para consistencia con el resto del panel
-	// (los labels de latestVersion no pasan por i18n pero no deben mezclar idiomas).
 	const unavailableLabel = installedVersion.toUpperCase().includes('SNAPSHOT')
 		? 'Dynamic version'
 		: hasPrivateRepos
@@ -37,14 +35,14 @@ export async function checkMaven(
 		installedVersion,
 		latestVersion: unavailableLabel,
 		// Marcar siempre como upToDate para evitar que aparezca en safeUpdates
-		// con un label no-versión como "Versión dinámica" o "Repositorio privado".
-		// La columna Versión en webview ya muestra ∼ Sin fijar para estos casos.
+		// con un label no-versión como "Dynamic version" o "Private repository".
 		upToDate: true,
 		exactVersion,
 		vulnerabilities: [],
 		detectedByTool: false,
 		ecosystem: ECOSYSTEM,
 		majorVersionJump: 0,
+		cveCheckFailed: false,
 	};
 
 	const controller = new AbortController();
@@ -55,7 +53,7 @@ export async function checkMaven(
 		const url   = `https://search.maven.org/solrsearch/select?q=${query}&rows=1&wt=json`;
 
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.6 (https://scanreq.com)' },
 			signal: controller.signal,
 		});
 
@@ -70,7 +68,6 @@ export async function checkMaven(
 
 		// Si latestVersion es una fecha legacy o un pre-release (milestone, alpha, beta, RC),
 		// buscar la versión semver estable más reciente entre todas las versiones del artefacto.
-		// Ejemplos afectados: commons-io (20030203.000550), junit-jupiter (5.13.0-M3)
 		if (isDateVersion(latestVersion) || !isStableSemver(latestVersion)) {
 			const semverLatest = await findLatestSemverVersion(groupId, artifactId);
 			if (semverLatest) {
@@ -79,20 +76,20 @@ export async function checkMaven(
 		}
 
 		// Si la versión instalada es mayor que la "latest" del registro,
-		// el paquete está al día (el registro puede estar desactualizado para releases muy recientes).
-		// Evita sugerir downgrades.
+		// el paquete está al día. Evita sugerir downgrades.
 		if (installedVersion !== 'unknown' && compareSemver(installedVersion, latestVersion) > 0) {
 			latestVersion = installedVersion;
 		}
 
-		// Usar compareSemver en lugar de === para evitar falsos desactualizados
-		// por diferencias de capitalización en sufijos Maven (-Final vs -final, -GA vs -ga).
 		const upToDate        = installedVersion !== 'unknown' && compareSemver(installedVersion, latestVersion) === 0;
 		const majorVersionJump = calcMajorVersionJump(installedVersion, latestVersion);
 
 		let vulnerabilities: Vulnerability[] = [];
+		let cveCheckFailed = false;
 		if (exactVersion || isPro) {
-			vulnerabilities = await checkCVEs(name, installedVersion, OSV_ECOSYSTEM);
+			const cveResult = await checkCVEs(name, installedVersion, OSV_ECOSYSTEM);
+			vulnerabilities = cveResult.vulnerabilities;
+			cveCheckFailed = cveResult.failed;
 		}
 
 		return {
@@ -105,6 +102,7 @@ export async function checkMaven(
 			detectedByTool: false,
 			ecosystem: ECOSYSTEM,
 			majorVersionJump,
+			cveCheckFailed,
 		};
 	} catch {
 		return notFound;
@@ -115,7 +113,6 @@ export async function checkMaven(
 
 /**
  * Detecta si una versión tiene formato de fecha legacy (YYYYMMDD.HHMMSS o YYYYMMDD).
- * Ejemplos: "20030203.000550", "20041127.091804"
  */
 function isDateVersion(version: string): boolean {
 	return /^\d{8}(\.\d+)?$/.test(version);
@@ -138,7 +135,7 @@ export async function versionExistsInMaven(
 		const url   = `https://search.maven.org/solrsearch/select?q=${query}&core=gav&rows=1&wt=json`;
 
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.6 (https://scanreq.com)' },
 			signal: controller.signal,
 		});
 
@@ -156,9 +153,6 @@ export async function versionExistsInMaven(
 
 /**
  * Busca la versión semver estable más reciente de un artefacto en Maven Central.
- * Usa el endpoint de versiones (core=gav) que devuelve todas las versiones.
- * Filtra: versiones fecha, SNAPSHOT, alpha, beta, RC, M (milestone).
- * Ordena por semver descendente y devuelve la más alta.
  */
 async function findLatestSemverVersion(groupId: string, artifactId: string): Promise<string | null> {
 	const controller = new AbortController();
@@ -169,7 +163,7 @@ async function findLatestSemverVersion(groupId: string, artifactId: string): Pro
 		const url   = `https://search.maven.org/solrsearch/select?q=${query}&core=gav&rows=50&wt=json`;
 
 		const response = await fetch(url, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.6 (https://scanreq.com)' },
 			signal: controller.signal,
 		});
 
@@ -185,7 +179,6 @@ async function findLatestSemverVersion(groupId: string, artifactId: string): Pro
 
 		if (versions.length === 0) { return null; }
 
-		// Ordenar semver descendente y devolver el mayor
 		versions.sort((a, b) => compareSemver(b, a));
 		return versions[0];
 	} catch {
@@ -197,7 +190,6 @@ async function findLatestSemverVersion(groupId: string, artifactId: string): Pro
 
 /**
  * Comprueba si una versión es semver estable (no fecha, no snapshot, no pre-release).
- * Acepta sufijos de release válidos en Maven: -GA, -Final, -RELEASE, -jre11, -android, etc.
  */
 function isStableSemver(version: string): boolean {
 	if (isDateVersion(version)) { return false; }
@@ -205,14 +197,13 @@ function isStableSemver(version: string): boolean {
 	if (lower.includes('snapshot'))                        { return false; }
 	if (lower.includes('alpha'))                           { return false; }
 	if (lower.includes('beta'))                            { return false; }
-	if (lower.includes('-rc') && /\-rc\d*/i.test(lower))  { return false; } // -RC1, -rc2
-	if (/\-m\d/i.test(lower))                             { return false; } // milestone: -M1, -M2
-	if (lower.includes('-ea'))                             { return false; } // early access
+	if (lower.includes('-rc') && /\-rc\d*/i.test(lower))  { return false; }
+	if (/\-m\d/i.test(lower))                             { return false; }
+	if (lower.includes('-ea'))                             { return false; }
 	if (lower.includes('-preview'))                        { return false; }
 	if (lower.includes('-incubating'))                     { return false; }
-	if (lower.includes('+'))                               { return false; } // build metadata
+	if (lower.includes('+'))                               { return false; }
 	if (version === 'LATEST' || version === 'RELEASE')     { return false; }
-	// Debe empezar por dígito
 	return /^\d/.test(version);
 }
 

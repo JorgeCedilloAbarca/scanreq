@@ -27,7 +27,7 @@ export async function checkNpm(
 
 	try {
 		const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`, {
-			headers: { 'User-Agent': 'scanreq-vscode/2.5' },
+			headers: { 'User-Agent': 'scanreq-vscode/2.6' },
 			signal: controller.signal,
 		});
 
@@ -39,9 +39,16 @@ export async function checkNpm(
 		const latestVersion: string = data.version ?? 'unknown';
 
 		const canCheckCVEs = exactVersion || (isPro && detectedByTool);
-		const vulnerabilities = canCheckCVEs && effectiveVersion !== 'unknown'
-			? await checkCVEs(packageName, effectiveVersion, 'npm')
-			: [];
+		let cveCheckFailed = false;
+
+		let vulnerabilities: import("../types").Vulnerability[];
+		if (canCheckCVEs && effectiveVersion !== 'unknown') {
+			const cveResult = await checkCVEs(packageName, effectiveVersion, 'npm');
+			vulnerabilities = cveResult.vulnerabilities;
+			cveCheckFailed = cveResult.failed;
+		} else {
+			vulnerabilities = [];
+		}
 
 		return {
 			name: packageName,
@@ -54,7 +61,8 @@ export async function checkNpm(
 			vulnerabilities,
 			detectedByTool,
 			majorVersionJump: calcMajorVersionJump(effectiveVersion, latestVersion),
-			ecosystem: 'node'
+			ecosystem: 'node',
+			cveCheckFailed,
 		};
 	} catch {
 		return {
@@ -66,7 +74,8 @@ export async function checkNpm(
 			vulnerabilities: [],
 			detectedByTool,
 			majorVersionJump: 0,
-			ecosystem: 'node'
+			ecosystem: 'node',
+			cveCheckFailed: false,
 		};
 	} finally {
 		clearTimeout(timeoutId);

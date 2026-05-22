@@ -23,9 +23,11 @@ const i18n: Record<string, Record<string, string>> = {
 		statusOk: 'ScanReq ✓ Todo al día',
 		statusCVEs: 'ScanReq ⚠ CVEs',
 		statusOutdated: 'ScanReq ↑ Actualizaciones',
+		statusCveCheckFailed: 'ScanReq ⚠ Verificación incompleta',
 		statusTooltipOk: 'ScanReq: Todo al día',
 		statusTooltipCVEs: 'ScanReq: Hay vulnerabilidades — click para ver',
 		statusTooltipOutdated: 'ScanReq: Hay actualizaciones disponibles — click para ver',
+		statusTooltipCveCheckFailed: 'ScanReq: La verificación de CVEs falló para algunos paquetes — click para ver',
 	},
 	en: {
 		title: 'ScanReq',
@@ -49,9 +51,11 @@ const i18n: Record<string, Record<string, string>> = {
 		statusOk: 'ScanReq ✓ All good',
 		statusCVEs: 'ScanReq ⚠ CVEs found',
 		statusOutdated: 'ScanReq ↑ Updates available',
+		statusCveCheckFailed: 'ScanReq ⚠ Incomplete check',
 		statusTooltipOk: 'ScanReq: Everything is up to date',
 		statusTooltipCVEs: 'ScanReq: Vulnerabilities found — click to view',
 		statusTooltipOutdated: 'ScanReq: Updates available — click to view',
+		statusTooltipCveCheckFailed: 'ScanReq: CVE verification failed for some packages — click to view',
 	}
 };
 

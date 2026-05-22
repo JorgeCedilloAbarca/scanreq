@@ -1,5 +1,12 @@
 import { Vulnerability, OsvEcosystem } from './ecosystems/types';
 
+/** Resultado de checkCVEs — distingue "sin CVEs confirmado" de "fallo al verificar" */
+export interface CveCheckResult {
+	vulnerabilities: Vulnerability[];
+	/** true si la consulta a OSV falló (timeout, error de red, 4xx/5xx) */
+	failed: boolean;
+}
+
 /**
  * Compara dos strings de versión numérica (semver simplificado).
  * Devuelve negativo si a < b, 0 si iguales, positivo si a > b.
@@ -78,8 +85,8 @@ export async function checkCVEs(
 	packageName: string,
 	version: string,
 	ecosystem: OsvEcosystem
-): Promise<Vulnerability[]> {
-	// Fix #8: timeout de 10 s — evita que un OSV lento bloquee el scan indefinidamente
+): Promise<CveCheckResult> {
+	// Timeout de 10 s — evita que un OSV lento bloquee el scan indefinidamente
 	const controller = new AbortController();
 	const timeoutId  = setTimeout(() => controller.abort(), 10_000);
 
@@ -94,20 +101,19 @@ export async function checkCVEs(
 			signal: controller.signal,
 		});
 
-		// Fix #9: distinguir error de servidor de "sin CVEs confirmado"
-		// Un 429 o 5xx no equivale a "sin vulnerabilidades" — logueamos y devolvemos []
-		// para no mostrar un falso "✓ Sin CVEs" cuando OSV no respondió correctamente.
+		// Un 429 o 5xx no equivale a "sin vulnerabilidades" — logueamos y
+		// marcamos como failed para que el webview no muestre "✓ Sin CVEs".
 		if (!response.ok) {
 			console.warn(`ScanReq: OSV responded ${response.status} for ${packageName}@${version}`);
-			return [];
+			return { vulnerabilities: [], failed: true };
 		}
 
 		const data = await response.json() as any;
 		if (!data.vulns) {
-			return [];
+			return { vulnerabilities: [], failed: false };
 		}
 
-		// Fix #2: ordenar por severidad ANTES de truncar — nunca ocultar un CRITICAL
+		// Ordenar por severidad ANTES de truncar — nunca ocultar un CRITICAL
 		const SEVERITY_ORDER: Record<string, number> = {
 			CRITICAL: 0,
 			HIGH:     1,
@@ -121,20 +127,21 @@ export async function checkCVEs(
 			return sa - sb;
 		});
 
-		// Fix #7: pasar version a extractFixedVersion para elegir la rama de parche correcta
-		return sorted.slice(0, 5).map((v: any) => ({
+		const vulnerabilities = sorted.slice(0, 5).map((v: any) => ({
 			id: v.id,
 			summary: v.summary || 'No description',
 			severity: v.database_specific?.severity || 'UNKNOWN',
 			fixedVersion: extractFixedVersion(v, version),
 		}));
 
+		return { vulnerabilities, failed: false };
+
 	} catch (err: any) {
-		// Fix #8: AbortError = timeout expirado
+		// AbortError = timeout expirado, o error de red
 		if (err?.name === 'AbortError') {
 			console.warn(`ScanReq: OSV query timed out for ${packageName}@${version}`);
 		}
-		return [];
+		return { vulnerabilities: [], failed: true };
 	} finally {
 		clearTimeout(timeoutId);
 	}

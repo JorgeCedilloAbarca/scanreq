@@ -46,20 +46,24 @@ describe('calcMajorVersionJump', () => {
 
 describe('calcMigrationRisk', () => {
 
-	it('mismo major sin CVEs — riesgo low', () => {
+	it('sin salto sin CVEs — riesgo low', () => {
 		expect(calcMigrationRisk(0, false)).toBe('low');
 	});
 
-	it('mismo major con CVEs — riesgo medium', () => {
+	it('sin salto con CVEs — riesgo medium', () => {
 		expect(calcMigrationRisk(0, true)).toBe('medium');
 	});
 
-	it('salto de 1 major sin CVEs — riesgo medium', () => {
-		expect(calcMigrationRisk(1, false)).toBe('medium');
+	// Desde v2.5.2: cualquier salto de major es siempre Fase 3 (high),
+	// independientemente de si hay CVEs o no. La razón: un major jump
+	// implica breaking changes por definición — necesita un plan de migración
+	// antes de actualizar, independientemente de si tiene CVEs asociados.
+	it('salto de 1 major sin CVEs — riesgo high', () => {
+		expect(calcMigrationRisk(1, false)).toBe('high');
 	});
 
-	it('salto de 1 major con CVEs — riesgo medium', () => {
-		expect(calcMigrationRisk(1, true)).toBe('medium');
+	it('salto de 1 major con CVEs — riesgo high', () => {
+		expect(calcMigrationRisk(1, true)).toBe('high');
 	});
 
 	it('salto de 2 majors — riesgo high', () => {

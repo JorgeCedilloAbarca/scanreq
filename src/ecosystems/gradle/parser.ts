@@ -25,6 +25,13 @@ export interface ParsedPackage {
 // Caché de BOMs ya consultados para evitar requests repetidos en el mismo scan
 const bomCache = new Map<string, Map<string, string>>();
 
+// Fix D5: limpiar caché de BOMs entre scans — si el usuario cambia la versión
+// de Spring Boot en su build.gradle y el watcher dispara un rescan, el BOM
+// viejo ya no debe estar en caché.
+export function clearBomCache(): void {
+	bomCache.clear();
+}
+
 export async function parseBuildGradleAsync(filePath: string): Promise<ParsedPackage[]> {
 	let content: string;
 	try {
@@ -212,7 +219,7 @@ function extractBoms(depsBlock: string, variables: Map<string, string>, fullCont
 	// 2. Plugin org.springframework.boot — BOM implícito spring-boot-dependencies
 	// Detecta: id 'org.springframework.boot' version '2.7.18'
 	//       o: id("org.springframework.boot") version "3.2.1"
-	const springBootPluginRe = /id\s*[('""]org\.springframework\.boot['")]+\s*version\s*['"]([^'"]+)['"]/;
+	const springBootPluginRe = /id\s*[('"""]org\.springframework\.boot['")]+\s*version\s*['"]([^'"]+)['"]/;
 	const springMatch = fullContent.match(springBootPluginRe);
 	if (springMatch) {
 		const springVersion = springMatch[1].trim();
@@ -227,20 +234,15 @@ function extractBoms(depsBlock: string, variables: Map<string, string>, fullCont
 
 	return boms;
 }
+
 /**
  * Descarga el POM de un BOM desde Maven Central y extrae el mapa
  * artifactId → version de su sección <dependencyManagement>.
  *
- * El POM de un BOM tiene esta estructura:
- *   <dependencyManagement>
- *     <dependencies>
- *       <dependency>
- *         <groupId>org.junit.jupiter</groupId>
- *         <artifactId>junit-jupiter</artifactId>
- *         <version>5.9.1</version>
- *       </dependency>
- *     </dependencies>
- *   </dependencyManagement>
+ * Fix F6: ahora resuelve ${properties} internas del BOM, igual que java/parser.ts.
+ * Spring Boot BOM define cosas como <postgresql.version>42.7.3</postgresql.version>
+ * y las usa en su <dependencyManagement> como ${postgresql.version}.
+ * Sin este fix, esas versiones quedaban como "${postgresql.version}" literal → 'unknown'.
  */
 async function resolveBomVersions(
 	groupId: string,
@@ -260,12 +262,11 @@ async function resolveBomVersions(
 
 	try {
 		// URL del POM en Maven Central
-		// e.g. https://repo1.maven.org/maven2/org/junit/junit-bom/5.9.1/junit-bom-5.9.1.pom
 		const groupPath = groupId.replace(/\./g, '/');
 		const pomUrl    = `https://repo1.maven.org/maven2/${groupPath}/${artifactId}/${version}/${artifactId}-${version}.pom`;
 
 		const response = await fetch(pomUrl, {
-			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.5 (https://scanreq.com)' },
+			headers: { 'User-Agent': 'ScanReq-VSCode-Extension/2.6 (https://scanreq.com)' },
 			signal: controller.signal,
 		});
 
@@ -275,6 +276,11 @@ async function resolveBomVersions(
 		}
 
 		const xml = await response.text();
+
+		// Fix F6: extraer las <properties> del propio BOM para resolver versiones internas.
+		// Spring Boot BOM define cosas como <postgresql.version>42.7.3</postgresql.version>
+		// y las usa en su <dependencyManagement> como ${postgresql.version}.
+		const bomProperties = extractBomProperties(xml);
 
 		// Extraer sección dependencyManagement
 		const dmStart = xml.indexOf('<dependencyManagement>');
@@ -291,16 +297,20 @@ async function resolveBomVersions(
 		let dm: RegExpExecArray | null;
 
 		while ((dm = depRe.exec(dmSection)) !== null) {
-			const block      = dm[1];
+			const block         = dm[1];
 			const depGroupId    = extractTag(block, 'groupId');
 			const depArtifactId = extractTag(block, 'artifactId');
-			const depVersion    = extractTag(block, 'version');
+			const rawDepVersion = extractTag(block, 'version');
 
-			if (depGroupId && depArtifactId && depVersion) {
-				// Clave: "groupId:artifactId" y también solo "artifactId" para búsqueda rápida
-				const fullName = `${depGroupId}:${depArtifactId}`;
-				map.set(fullName, depVersion);
-				map.set(depArtifactId, depVersion);
+			if (depGroupId && depArtifactId && rawDepVersion) {
+				// Fix F6: resolver properties internas del BOM (ej: ${postgresql.version} → 42.7.3)
+				const depVersion = resolveProperty(rawDepVersion, bomProperties);
+				// Solo guardar si la versión quedó completamente resuelta
+				if (depVersion && !depVersion.includes('${')) {
+					const fullName = `${depGroupId}:${depArtifactId}`;
+					map.set(fullName, depVersion);
+					map.set(depArtifactId, depVersion);
+				}
 			}
 		}
 	} catch (err: any) {
@@ -314,6 +324,44 @@ async function resolveBomVersions(
 
 	bomCache.set(cacheKey, map);
 	return map;
+}
+
+/**
+ * Extrae las <properties> de un POM XML.
+ * Usado para resolver ${property.name} en versiones del BOM.
+ */
+function extractBomProperties(xml: string): Map<string, string> {
+	const map = new Map<string, string>();
+
+	// project.version
+	const projectVersionMatch = xml.match(/<project[^>]*>[\s\S]*?<version>\s*([^<]+)\s*<\/version>/);
+	if (projectVersionMatch) {
+		map.set('project.version', projectVersionMatch[1].trim());
+	}
+
+	// Bloque <properties>
+	const propsStart = xml.indexOf('<properties>');
+	const propsEnd   = xml.indexOf('</properties>');
+	if (propsStart !== -1 && propsEnd !== -1) {
+		const propsBlock = xml.slice(propsStart, propsEnd + '</properties>'.length);
+		const propRe = /<([a-zA-Z0-9._\-]+)>\s*([^<]+)\s*<\/\1>/g;
+		let pm: RegExpExecArray | null;
+		while ((pm = propRe.exec(propsBlock)) !== null) {
+			map.set(pm[1], pm[2].trim());
+		}
+	}
+
+	return map;
+}
+
+/**
+ * Resuelve ${property.name} en un valor usando el mapa de properties.
+ */
+function resolveProperty(value: string, properties: Map<string, string>): string {
+	if (!value) { return value; }
+	return value.replace(/\$\{([^}]+)\}/g, (_, key) => {
+		return properties.get(key) ?? `\${${key}}`;
+	});
 }
 
 function extractTag(block: string, tag: string): string | null {

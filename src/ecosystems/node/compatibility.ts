@@ -1,5 +1,6 @@
 import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate, calcMigrationRisk } from '../types';
 import { getLocale } from '../../i18n';
+import { compareVersions, buildAllSafeUpdates } from '../shared';
 
 interface NpmPackageData {
 	version: string;
@@ -18,7 +19,7 @@ async function fetchNpmData(packageName: string): Promise<NpmPackageData | null>
 	try {
 		const response = await fetch(
 			`https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
-			{ headers: { 'User-Agent': 'scanreq-vscode/2.4' } }
+			{ headers: { 'User-Agent': 'scanreq-vscode/2.6' } }
 		);
 		if (!response.ok) {
 			npmCache.set(key, null);
@@ -35,8 +36,6 @@ async function fetchNpmData(packageName: string): Promise<NpmPackageData | null>
 
 function parseSemverRange(spec: string): { op: string; version: string } | null {
 	const s = spec.trim();
-	// Soporta: ^1.2.3, ~1.2.3, >=1.2.3, <=1.2.3, >1.2.3, <1.2.3, =1.2.3, 1.2.3, *
-	// También con espacio: ">= 16", "< 19.0.0"
 	const match = s.match(/^(\^|~|>=|<=|>|<|=)?\s*(\d[\d.]*)$/);
 	if (!match) { return null; }
 	return { op: match[1] ?? '=', version: match[2] };
@@ -44,17 +43,6 @@ function parseSemverRange(spec: string): { op: string; version: string } | null 
 
 function versionToTuple(v: string): number[] {
 	return v.split('.').map(n => parseInt(n) || 0);
-}
-
-function compareVersions(a: string, b: string): number {
-	const ta = versionToTuple(a);
-	const tb = versionToTuple(b);
-	const len = Math.max(ta.length, tb.length);
-	for (let i = 0; i < len; i++) {
-		const diff = (ta[i] ?? 0) - (tb[i] ?? 0);
-		if (diff !== 0) { return diff; }
-	}
-	return 0;
 }
 
 function satisfiesSemver(installed: string, op: string, specVersion: string): boolean {
@@ -67,14 +55,12 @@ function satisfiesSemver(installed: string, op: string, specVersion: string): bo
 		case '=':
 		case '==': return cmp === 0;
 		case '^': {
-			// Compatible con el major — ^1.2.3 significa >=1.2.3 <2.0.0
 			const instTuple = versionToTuple(installed);
 			const specTuple = versionToTuple(specVersion);
 			if (instTuple[0] !== specTuple[0]) { return false; }
 			return cmp >= 0;
 		}
 		case '~': {
-			// Compatible con el minor — ~1.2.3 significa >=1.2.3 <1.3.0
 			const instTuple = versionToTuple(installed);
 			const specTuple = versionToTuple(specVersion);
 			if (instTuple[0] !== specTuple[0]) { return false; }
@@ -87,26 +73,17 @@ function satisfiesSemver(installed: string, op: string, specVersion: string): bo
 
 /**
  * Normaliza un spec de peerDependency separando los términos AND correctamente.
- *
- * El problema: ">= 16" (con espacio entre operador y versión) al hacer split(/\s+/)
- * produce ['>=', '16'] — dos tokens — en lugar de un spec único ">= 16".
- * Esto hace que parseSemverRange('>=') devuelva null y parseSemverRange('16')
- * devuelva { op: '=', version: '16' }, lo que causa falsos positivos de conflicto.
- *
- * La solución: reagrupar tokens consecutivos que son (operador, versión) en un único string.
+ * Reagrupa tokens consecutivos que son (operador, versión) en un único string.
  */
 function normalizeAndParts(part: string): string[] {
-	// Dividir por espacios preservando operadores pegados a versiones
 	const tokens = part.trim().split(/\s+/);
 	const normalized: string[] = [];
 
 	let i = 0;
 	while (i < tokens.length) {
 		const token = tokens[i];
-		// Si el token es solo un operador (>=, <=, >, <, =, !=) sin versión pegada
 		const opOnly = /^(>=|<=|!=|>|<|=)$/.test(token);
 		if (opOnly && i + 1 < tokens.length && /^\d/.test(tokens[i + 1])) {
-			// Combinar operador + versión siguiente: ">= 16" → ">=16"
 			normalized.push(token + tokens[i + 1]);
 			i += 2;
 		} else {
@@ -121,10 +98,8 @@ function normalizeAndParts(part: string): string[] {
 function checkSatisfied(installedVersion: string, spec: string): boolean {
 	if (spec === '*' || spec === '') { return true; }
 
-	// Rangos compuestos separados por || (e.g. "^16.0.0 || ^17.0.0 || ^18.0.0")
 	const orParts = spec.split('||').map(s => s.trim());
 	return orParts.some(part => {
-		// Normalizar primero para manejar ">= 16" con espacio
 		const andParts = normalizeAndParts(part);
 		return andParts.every(p => {
 			const parsed = parseSemverRange(p);
@@ -142,7 +117,6 @@ export async function runCompatibilityAnalysis(
 	const locale = getLocale();
 
 	const conflicts: ConflictDetail[] = [];
-	const safeUpdates: SafeUpdate[] = [];
 
 	// Mapa de nombre normalizado → versión instalada
 	const installedMap = new Map<string, string>();
@@ -173,65 +147,12 @@ export async function runCompatibilityAnalysis(
 				});
 			}
 		}
-
-		// safeUpdates — paquetes desactualizados
-		if (!pkg.upToDate && pkg.installedVersion !== 'unknown' && pkg.latestVersion !== 'Not found') {
-			safeUpdates.push({
-				packageName: pkg.name,
-				currentVersion: pkg.exactVersion ? pkg.installedVersion : `∼${pkg.installedVersion}`,
-				recommendedVersion: pkg.latestVersion,
-				reason: pkg.vulnerabilities.length > 0
-					? locale === 'es'
-						? `Tiene ${pkg.vulnerabilities.length} CVE(s) conocido(s)`
-						: `Has ${pkg.vulnerabilities.length} known CVE(s)`
-					: locale === 'es'
-						? 'Versión más reciente disponible'
-						: 'Newer version available',
-						migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0)
-				});
-					} else if (pkg.upToDate && pkg.vulnerabilities.length > 0) {
-			// Paquete al día según el registry pero con CVEs activos.
-			// Si OSV reporta fixedVersion, sugerirla directamente.
-			const fixedVersions = pkg.vulnerabilities
-				.map(v => v.fixedVersion)
-				.filter((v): v is string => !!v);
-
-			if (fixedVersions.length > 0) {
-				// Tomar la versión más alta entre todos los fixes reportados por OSV
-				fixedVersions.sort((a, b) => {
-					const pa = a.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-					const pb = b.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-					const len = Math.max(pa.length, pb.length);
-					for (let i = 0; i < len; i++) {
-						const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
-						if (diff !== 0) { return diff; }
-					}
-					return 0;
-				});
-				safeUpdates.push({
-					packageName: pkg.name,
-					currentVersion: pkg.installedVersion,
-					recommendedVersion: fixedVersions[0],
-					reason: locale === 'es'
-						? `Versión parcheada disponible — corrige ${pkg.vulnerabilities.length} CVE(s)`
-						: `Patched version available — fixes ${pkg.vulnerabilities.length} CVE(s)`,
-					migrationRisk: 'medium',
-				});
-			} else {
-				safeUpdates.push({
-					packageName: pkg.name,
-					currentVersion: pkg.installedVersion,
-					recommendedVersion: pkg.installedVersion,
-					reason: locale === 'es'
-						? `Sin parche conocido — evalúa mitigar o reemplazar`
-						: `No known patch — consider mitigating or replacing`,
-					migrationRisk: 'unpatched',
-				});
-			}
-			}
-		});
+	});
 
 	await Promise.all(analysisPromises);
+
+	// Fix D1: safeUpdates generados por función compartida
+	const safeUpdates = buildAllSafeUpdates(packages, locale);
 
 	// Deduplicar conflictos
 	const seen = new Set<string>();

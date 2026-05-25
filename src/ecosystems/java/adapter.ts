@@ -1,5 +1,5 @@
 import { EcosystemAdapter, ScanResult } from '../types';
-import { parsePomXmlAsync } from './parser';
+import { parsePomXmlAsync, clearBomCache } from './parser';
 import { checkMaven } from './registry';
 import { runCompatibilityAnalysis } from './compatibility';
 
@@ -9,6 +9,9 @@ export const javaAdapter: EcosystemAdapter = {
 	filePatterns: ['pom.xml'],
 
 	async scan(filePath: string, isPro: boolean): Promise<ScanResult> {
+		// Fix D5: limpiar caché de BOMs al inicio de cada scan
+		clearBomCache();
+
 		// parsePomXmlAsync resuelve versiones del <parent> Spring Boot via BOM
 		const parsed = await parsePomXmlAsync(filePath);
 

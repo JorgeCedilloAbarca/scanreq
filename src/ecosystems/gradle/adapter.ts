@@ -1,5 +1,5 @@
 import { EcosystemAdapter, ScanResult } from '../types';
-import { parseBuildGradleAsync } from './parser';
+import { parseBuildGradleAsync, clearBomCache } from './parser';
 import { checkMaven } from '../java/registry';
 import { runCompatibilityAnalysis } from '../java/compatibility';
 
@@ -9,6 +9,9 @@ export const gradleAdapter: EcosystemAdapter = {
 	filePatterns: ['build.gradle', 'build.gradle.kts'],
 
 	async scan(filePath: string, isPro: boolean): Promise<ScanResult> {
+		// Fix D5: limpiar caché de BOMs al inicio de cada scan
+		clearBomCache();
+
 		// parseBuildGradleAsync resuelve versiones de BOMs via Maven Central
 		const parsed = await parseBuildGradleAsync(filePath);
 

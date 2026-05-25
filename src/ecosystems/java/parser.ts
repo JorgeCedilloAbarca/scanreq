@@ -14,6 +14,13 @@ export interface ParsedPackage {
 // Cache de BOMs descargados durante el scan
 const bomCache = new Map<string, Map<string, string>>();
 
+// Fix D5: limpiar caché de BOMs entre scans — si el usuario cambia la versión
+// de Spring Boot en su pom.xml y el watcher dispara un rescan, el BOM
+// viejo ya no debe estar en caché.
+export function clearBomCache(): void {
+	bomCache.clear();
+}
+
 /**
  * Parser asíncrono de pom.xml — resuelve versiones de dependencias sin versión
  * cuando vienen de un <parent> de Spring Boot u otros BOMs conocidos.

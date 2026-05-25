@@ -16,6 +16,12 @@ export interface GoModEdge {
 
 let cachedGoAvailability: GoAvailability | undefined = undefined;
 
+// Fix R1: limpiar caché de disponibilidad de Go entre scans.
+// Si el usuario instala Go después de abrir VS Code, ScanReq debe detectarlo.
+export function clearGoCache(): void {
+	cachedGoAvailability = undefined;
+}
+
 /**
  * Detecta si `go` está disponible en el PATH.
  * Resultado cacheado para el ciclo de vida de la extensión.

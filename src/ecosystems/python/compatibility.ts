@@ -1,5 +1,6 @@
 import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate, calcMigrationRisk } from '../types';
 import { getLocale } from '../../i18n';
+import { compareVersions, buildAllSafeUpdates } from '../shared';
 
 interface PyPIPackageData {
 	info: {
@@ -46,17 +47,6 @@ function versionToTuple(v: string): number[] {
 	return v.replace(/[^\d.]/g, '').split('.').map(n => parseInt(n) || 0);
 }
 
-function compareVersions(a: string, b: string): number {
-	const ta = versionToTuple(a);
-	const tb = versionToTuple(b);
-	const len = Math.max(ta.length, tb.length);
-	for (let i = 0; i < len; i++) {
-		const diff = (ta[i] ?? 0) - (tb[i] ?? 0);
-		if (diff !== 0) { return diff; }
-	}
-	return 0;
-}
-
 function satisfiesSpecifier(version: string, op: string, specVersion: string): boolean {
 	const cmp = compareVersions(version, specVersion);
 	switch (op) {
@@ -94,7 +84,6 @@ export async function runCompatibilityAnalysis(
 	const locale = getLocale();
 
 	const conflicts: ConflictDetail[] = [];
-	const safeUpdates: SafeUpdate[] = [];
 
 	const installedMap = new Map<string, string>();
 	for (const pkg of packages) {
@@ -114,7 +103,7 @@ export async function runCompatibilityAnalysis(
 				continue;
 			}
 
-			const depMatch = depSpec.match(/^([A-Za-z0-9]([A-Za-z0-9._-]*)?)\s*(?:\(([^)]+)\))?(.*)$/);
+			const depMatch = depSpec.match(/^([A-Za-z0-9]([A-Za-z0-9._-]*)?)\\s*(?:\\(([^)]+)\\))?(.*)$/);
 			if (!depMatch) { continue; }
 
 			const depName = depMatch[1].toLowerCase().replace(/-/g, '_');
@@ -158,64 +147,12 @@ export async function runCompatibilityAnalysis(
 				});
 			}
 		}
-
-		if (!pkg.upToDate && pkg.installedVersion !== 'unknown' && pkg.latestVersion !== 'Not found') {
-			safeUpdates.push({
-				packageName: pkg.name,
-				currentVersion: pkg.exactVersion ? pkg.installedVersion : `∼${pkg.installedVersion}`,
-				recommendedVersion: pkg.latestVersion,
-				reason: pkg.vulnerabilities.length > 0
-					? locale === 'es'
-						? `Tiene ${pkg.vulnerabilities.length} CVE(s) conocido(s)`
-						: `Has ${pkg.vulnerabilities.length} known CVE(s)`
-					: locale === 'es'
-						? 'Versión más reciente disponible'
-						: 'Newer version available',
-					migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0)
-				});
-					} else if (pkg.upToDate && pkg.vulnerabilities.length > 0) {
-			// Paquete al día según el registry pero con CVEs activos.
-			// Si OSV reporta fixedVersion, sugerirla directamente.
-			const fixedVersions = pkg.vulnerabilities
-				.map(v => v.fixedVersion)
-				.filter((v): v is string => !!v);
-
-			if (fixedVersions.length > 0) {
-				// Tomar la versión más alta entre todos los fixes reportados por OSV
-				fixedVersions.sort((a, b) => {
-					const pa = a.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-					const pb = b.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-					const len = Math.max(pa.length, pb.length);
-					for (let i = 0; i < len; i++) {
-						const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
-						if (diff !== 0) { return diff; }
-					}
-					return 0;
-				});
-				safeUpdates.push({
-					packageName: pkg.name,
-					currentVersion: pkg.installedVersion,
-					recommendedVersion: fixedVersions[0],
-					reason: locale === 'es'
-						? `Versión parcheada disponible — corrige ${pkg.vulnerabilities.length} CVE(s)`
-						: `Patched version available — fixes ${pkg.vulnerabilities.length} CVE(s)`,
-					migrationRisk: 'medium',
-				});
-			} else {
-				safeUpdates.push({
-					packageName: pkg.name,
-					currentVersion: pkg.installedVersion,
-					recommendedVersion: pkg.installedVersion,
-					reason: locale === 'es'
-						? `Sin parche conocido — evalúa mitigar o reemplazar`
-						: `No known patch — consider mitigating or replacing`,
-					migrationRisk: 'unpatched',
-				});
-			}
-			}
-		});
+	});
 
 	await Promise.all(analysisPromises);
+
+	// Fix D1: safeUpdates generados por función compartida
+	const safeUpdates = buildAllSafeUpdates(packages, locale);
 
 	const seen = new Set<string>();
 	const dedupedConflicts = conflicts.filter(c => {

@@ -1,7 +1,7 @@
 import { EcosystemAdapter, ScanResult } from '../types';
 import { readFileWithEncoding, parseRequirements } from './parser';
 import { checkPyPI } from './registry';
-import { checkPipAvailability } from './pip';
+import { checkPipAvailability, clearPipCache } from './pip';
 import { runCompatibilityAnalysis } from './compatibility';
 
 export const pythonAdapter: EcosystemAdapter = {
@@ -10,6 +10,9 @@ export const pythonAdapter: EcosystemAdapter = {
 	filePatterns: ['requirements.txt'],
 
 	async scan(filePath: string, isPro: boolean): Promise<ScanResult> {
+		// Fix R1: limpiar caché de pip al inicio de cada scan
+		clearPipCache();
+
 		const content = readFileWithEncoding(filePath);
 		const parsed = parseRequirements(content);
 

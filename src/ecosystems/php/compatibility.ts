@@ -1,5 +1,6 @@
 import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate, calcMigrationRisk } from '../types';
 import { getLocale } from '../../i18n';
+import { compareVersions, buildAllSafeUpdates } from '../shared';
 
 interface PackagistRelease {
 	version: string;
@@ -34,7 +35,6 @@ async function fetchPackagistLatest(name: string): Promise<PackagistRelease | nu
 			packagistCache.set(key, null);
 			return null;
 		}
-		// El primer release estable
 		const latest = findLatestStable(releases);
 		packagistCache.set(key, latest);
 		return latest;
@@ -56,40 +56,15 @@ function findLatestStable(releases: PackagistRelease[]): PackagistRelease | null
 	return null;
 }
 
-// ─── Comparación de versiones ─────────────────────────────────────────────────
-
-function versionToTuple(v: string): number[] {
-	return v.replace(/[^0-9.]/g, '').split('.').map(n => parseInt(n) || 0);
-}
-
-function compareVersions(a: string, b: string): number {
-	const ta = versionToTuple(a);
-	const tb = versionToTuple(b);
-	const len = Math.max(ta.length, tb.length);
-	for (let i = 0; i < len; i++) {
-		const diff = (ta[i] ?? 0) - (tb[i] ?? 0);
-		if (diff !== 0) { return diff; }
-	}
-	return 0;
-}
-
 /**
  * Comprueba si una versión instalada satisface un specifier Composer.
  * Soporta: ^, ~, >=, <=, >, <, =, exacto, *, OR con || o |
- *
- * Composer usa semántica diferente de npm para ^ y ~ cuando el major es 0:
- * ^0.3.0 → >=0.3.0 <0.4.0 (no <1.0.0 como en npm)
- * Para simplificar usamos la regla general: ^ = compatible major, ~ = compatible minor.
  */
 function satisfiesComposerSpec(installed: string, spec: string): boolean {
 	const s = spec.trim();
 	if (s === '*' || s === '') { return true; }
 
 	// Fix F2: OR — Composer soporta || y | simple como operador OR.
-	// Antes solo se manejaba || y " | " (con espacios), dejando "^6.0|^7.0"
-	// sin separar — se pasaba entero, fallaba el parsing, y satisfiesComposerSpec
-	// devolvía true por defecto, ocultando conflictos reales.
-	// Ahora: split por uno o más pipes, con o sin espacios alrededor.
 	if (s.includes('|')) {
 		const parts = s.split(/\s*\|{1,2}\s*/).map(p => p.trim()).filter(Boolean);
 		if (parts.length > 1) {
@@ -166,9 +141,7 @@ export async function runCompatibilityAnalysis(
 	const locale = getLocale();
 
 	const conflicts: ConflictDetail[] = [];
-	const safeUpdates: SafeUpdate[] = [];
 
-	// Mapa nombre normalizado → versión instalada
 	const installedMap = new Map<string, string>();
 	for (const pkg of packages) {
 		installedMap.set(pkg.name.toLowerCase(), pkg.installedVersion);
@@ -183,7 +156,6 @@ export async function runCompatibilityAnalysis(
 		for (const [depRaw, spec] of Object.entries(require)) {
 			const depName = depRaw.toLowerCase();
 
-			// Ignorar PHP runtime y extensiones
 			if (depName === 'php' || depName.startsWith('ext-') || depName.startsWith('lib-')) { continue; }
 
 			const installedVersion = installedMap.get(depName);
@@ -202,67 +174,13 @@ export async function runCompatibilityAnalysis(
 				});
 			}
 		}
-
-		// safeUpdates
-		if (!pkg.upToDate && pkg.installedVersion !== 'unknown' && pkg.latestVersion !== 'Not found') {
-			safeUpdates.push({
-				packageName: pkg.name,
-				currentVersion: pkg.exactVersion ? pkg.installedVersion : `∼${pkg.installedVersion}`,
-				recommendedVersion: pkg.latestVersion,
-				reason: pkg.vulnerabilities.length > 0
-					? locale === 'es'
-						? `Tiene ${pkg.vulnerabilities.length} CVE(s) conocido(s)`
-						: `Has ${pkg.vulnerabilities.length} known CVE(s)`
-					: locale === 'es'
-						? 'Versión más reciente disponible'
-						: 'Newer version available',
-				migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0),
-			});
-		} else if (pkg.upToDate && pkg.vulnerabilities.length > 0) {
-			// Paquete al día según el registry pero con CVEs activos.
-			// Si OSV reporta fixedVersion, sugerirla directamente.
-			const fixedVersions = pkg.vulnerabilities
-				.map(v => v.fixedVersion)
-				.filter((v): v is string => !!v);
-
-			if (fixedVersions.length > 0) {
-				// Tomar la versión más alta entre todos los fixes reportados por OSV
-				fixedVersions.sort((a, b) => {
-					const pa = a.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-					const pb = b.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-					const len = Math.max(pa.length, pb.length);
-					for (let i = 0; i < len; i++) {
-						const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
-						if (diff !== 0) { return diff; }
-					}
-					return 0;
-				});
-				safeUpdates.push({
-					packageName: pkg.name,
-					currentVersion: pkg.installedVersion,
-					recommendedVersion: fixedVersions[0],
-					reason: locale === 'es'
-						? `Versión parcheada disponible — corrige ${pkg.vulnerabilities.length} CVE(s)`
-						: `Patched version available — fixes ${pkg.vulnerabilities.length} CVE(s)`,
-					migrationRisk: 'medium',
-				});
-			} else {
-				safeUpdates.push({
-					packageName: pkg.name,
-					currentVersion: pkg.installedVersion,
-					recommendedVersion: pkg.installedVersion,
-					reason: locale === 'es'
-						? `Sin parche conocido — evalúa mitigar o reemplazar`
-						: `No known patch — consider mitigating or replacing`,
-					migrationRisk: 'unpatched',
-				});
-			}
-		}
 	});
 
 	await Promise.all(analysisPromises);
 
-	// Deduplicar conflictos
+	// Fix D1: safeUpdates generados por función compartida
+	const safeUpdates = buildAllSafeUpdates(packages, locale);
+
 	const seen = new Set<string>();
 	const dedupedConflicts = conflicts.filter(c => {
 		const key = `${c.packageName}|${c.requiredBy}`;

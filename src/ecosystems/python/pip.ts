@@ -15,6 +15,12 @@ export interface PipAvailability {
 
 let cachedPipCommand: string | null | undefined = undefined; // undefined = no comprobado todavía
 
+// Fix R1: limpiar caché de disponibilidad de pip entre scans.
+// Si el usuario instala pip después de abrir VS Code, ScanReq debe detectarlo.
+export function clearPipCache(): void {
+	cachedPipCommand = undefined;
+}
+
 async function findPipCommand(): Promise<string | null> {
 	if (cachedPipCommand !== undefined) {
 		return cachedPipCommand;

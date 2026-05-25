@@ -1,11 +1,12 @@
 import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate, calcMigrationRisk } from '../types';
 import { getLocale } from '../../i18n';
+import { compareVersions, versionToTuple, buildAllSafeUpdates } from '../shared';
 
-const CRATES_USER_AGENT = 'scanreq-vscode/2.2 (https://scanreq.com)';
+const CRATES_USER_AGENT = 'scanreq-vscode/2.6 (https://scanreq.com)';
 
 interface CrateDependency {
 	crate_id: string;
-	req: string;           // especificador de versión, e.g. "^1.0", ">=0.8, <2.0"
+	req: string;
 	kind: 'normal' | 'dev' | 'build';
 	optional: boolean;
 }
@@ -40,25 +41,9 @@ async function fetchCrateDependencies(
 	}
 }
 
-function versionToTuple(v: string): number[] {
-	return v.replace(/[^0-9.]/g, '').split('.').map(n => parseInt(n) || 0);
-}
-
-function compareVersions(a: string, b: string): number {
-	const ta = versionToTuple(a);
-	const tb = versionToTuple(b);
-	const len = Math.max(ta.length, tb.length);
-	for (let i = 0; i < len; i++) {
-		const diff = (ta[i] ?? 0) - (tb[i] ?? 0);
-		if (diff !== 0) { return diff; }
-	}
-	return 0;
-}
-
 function satisfiesCargoSpec(installed: string, spec: string): boolean {
 	if (spec === '*' || spec === '') { return true; }
 
-	// Cargo soporta múltiples requisitos separados por coma: ">=1.0, <2.0"
 	const parts = spec.split(',').map(s => s.trim());
 
 	return parts.every(part => {
@@ -77,15 +62,11 @@ function satisfiesCargoSpec(installed: string, spec: string): boolean {
 			case '^': {
 				const instT = versionToTuple(installed);
 				const specT = versionToTuple(specVersion);
-				// ^1.2.3 → >=1.2.3 <2.0.0
-				// ^0.2.3 → >=0.2.3 <0.3.0
-				// ^0.0.3 → >=0.0.3 <0.0.4
 				if (specT[0] > 0) { return instT[0] === specT[0] && cmp >= 0; }
 				if (specT[1] > 0) { return instT[0] === 0 && instT[1] === specT[1] && cmp >= 0; }
 				return instT[0] === 0 && instT[1] === 0 && instT[2] === specT[2] && cmp >= 0;
 			}
 			case '~': {
-				// ~1.2.3 → >=1.2.3 <1.3.0
 				const instT = versionToTuple(installed);
 				const specT = versionToTuple(specVersion);
 				return instT[0] === specT[0] && instT[1] === specT[1] && cmp >= 0;
@@ -103,7 +84,6 @@ export async function runCompatibilityAnalysis(
 	const locale = getLocale();
 
 	const conflicts: ConflictDetail[] = [];
-	const safeUpdates: SafeUpdate[] = [];
 
 	const installedMap = new Map<string, string>();
 	for (const pkg of packages) {
@@ -120,7 +100,6 @@ export async function runCompatibilityAnalysis(
 			const deps = await fetchCrateDependencies(pkg.name, pkg.installedVersion);
 			if (!deps) { return; }
 
-			// Solo dependencias normales (no dev, no build) para conflictos
 			const normalDeps = deps.filter(d => d.kind === 'normal' && !d.optional);
 
 			for (const dep of normalDeps) {
@@ -141,61 +120,11 @@ export async function runCompatibilityAnalysis(
 					});
 				}
 			}
-
-			// safeUpdates
-			if (!pkg.upToDate && pkg.installedVersion !== 'unknown' && pkg.latestVersion !== 'Not found') {
-				safeUpdates.push({
-					packageName: pkg.name,
-					currentVersion: pkg.installedVersion,
-					recommendedVersion: pkg.latestVersion,
-					reason: pkg.vulnerabilities.length > 0
-						? locale === 'es'
-							? `Tiene ${pkg.vulnerabilities.length} CVE(s) conocido(s)`
-							: `Has ${pkg.vulnerabilities.length} known CVE(s)`
-						: locale === 'es'
-							? 'Versión más reciente disponible'
-							: 'Newer version available',
-						migrationRisk: calcMigrationRisk(pkg.majorVersionJump, pkg.vulnerabilities.length > 0)
-					});
-				} else if (pkg.upToDate && pkg.vulnerabilities.length > 0) {
-					const fixedVersions = pkg.vulnerabilities
-						.map(v => v.fixedVersion)
-						.filter((v): v is string => !!v);
-
-					if (fixedVersions.length > 0) {
-						fixedVersions.sort((a, b) => {
-							const pa = a.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-							const pb = b.split(/[.\-]/).map(p => parseInt(p, 10) || 0);
-							const len = Math.max(pa.length, pb.length);
-							for (let i = 0; i < len; i++) {
-								const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
-								if (diff !== 0) { return diff; }
-							}
-							return 0;
-						});
-						safeUpdates.push({
-							packageName: pkg.name,
-							currentVersion: pkg.exactVersion ? pkg.installedVersion : `∼${pkg.installedVersion}`,
-							recommendedVersion: fixedVersions[0],
-							reason: locale === 'es'
-								? `Versión parcheada disponible — corrige ${pkg.vulnerabilities.length} CVE(s)`
-								: `Patched version available — fixes ${pkg.vulnerabilities.length} CVE(s)`,
-							migrationRisk: 'medium',
-						});
-					} else {
-						safeUpdates.push({
-							packageName: pkg.name,
-							currentVersion: pkg.installedVersion,
-							recommendedVersion: pkg.installedVersion,
-							reason: locale === 'es'
-								? `Sin parche conocido — evalúa mitigar o reemplazar`
-								: `No known patch — consider mitigating or replacing`,
-							migrationRisk: 'unpatched',
-						});
-					}
-				}
 		}));
 	}
+
+	// Fix D1: safeUpdates generados por función compartida
+	const safeUpdates = buildAllSafeUpdates(packages, locale);
 
 	// Deduplicar conflictos
 	const seen = new Set<string>();

@@ -2,7 +2,7 @@ import { EcosystemAdapter, ScanResult } from '../types';
 import { parseGoMod } from './parser';
 import { checkGoModule } from './registry';
 import { runCompatibilityAnalysis } from './compatibility';
-import { checkGoAvailability } from './gotools';
+import { checkGoAvailability, clearGoCache } from './gotools';
 
 export const goAdapter: EcosystemAdapter = {
 	id: 'go',
@@ -10,6 +10,9 @@ export const goAdapter: EcosystemAdapter = {
 	filePatterns: ['go.mod'],
 
 	async scan(filePath: string, isPro: boolean): Promise<ScanResult> {
+		// Fix R1: limpiar caché de Go al inicio de cada scan
+		clearGoCache();
+
 		const parsed = parseGoMod(filePath);
 
 		// Go proxy no tiene rate limiting estricto pero limitamos por cortesía
@@ -26,8 +29,6 @@ export const goAdapter: EcosystemAdapter = {
 		let compatReport = null;
 		if (isPro) {
 			const goAvail = await checkGoAvailability();
-			// Pasamos filePath para que go mod graph pueda ejecutarse en el directorio correcto.
-			// toolUnavailable refleja si Go no está en PATH.
 			compatReport = await runCompatibilityAnalysis(
 				packages,
 				filePath,

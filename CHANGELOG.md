@@ -2,6 +2,35 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.6.2] - 2026-05-25
+
+### Security
+- **OSV failures no longer shown as "✓ No CVEs"** — when OSV returns a timeout, 429, or 5xx, the result is now shown as `⚠ CVE Error` (distinct red badge) instead of the green "No CVEs" badge. A warning insight appears at the bottom of the panel. The status bar also reflects the incomplete check state. Previously, an OSV failure was indistinguishable from a confirmed clean result — a silent false-negative in a security tool.
+- **`notify` endpoint: CORS restricted + rate limiting** — `/api/notify` (waitlist) previously accepted requests from any origin (`*`) with no rate limit. Now restricted to `scanreq.com` origins and limited to 5 requests per IP per hour via Cloudflare KV.
+- **`recover-token` endpoint: CORS restricted + rate limiting + timing oracle fix** — `/api/recover-token` previously accepted `*` CORS, had no rate limit, and was vulnerable to a timing side-channel (email-exists paths were slower due to the Resend call). Now restricted to `scanreq.com`, limited to 3 requests per IP per hour, and a random 500–1500ms delay equalizes response times.
+- **Token generator uses `crypto.getRandomValues()`** — `generateToken()` in the Stripe webhook used `Math.random()`, which is not cryptographically secure. Replaced with `crypto.getRandomValues()`, available natively in Cloudflare Workers.
+- **`get-token` endpoint: session_id format validation** — the `session_id` parameter is now validated against the Stripe format (`cs_test_` / `cs_live_`) before querying Supabase. Previously any string would trigger up to 5 Supabase queries (10s of retries).
+- **`validate-license` no longer returns customer email** — the response previously included `email: data.customer_email`, which the plugin does not use. A leaked token would also expose the buyer's email. Removed.
+
+### Fixed
+- **Python: compound version specifiers showed garbage as installed version** — `>=1.0,<2.0` was parsed and the version field was set to `1.0,<2.0` (the raw specifier with only the first operator stripped). The UI showed this string as the installed version. Now correctly extracts only the first numeric version component (`1.0`).
+- **PHP: single-pipe OR operator not recognized in compatibility** — Composer supports both `||` and `|` as OR operators (e.g. `^6.0|^7.0`). Only `||` and ` | ` (with spaces) were handled; `^6.0|^7.0` was passed unsplit to the spec parser, which fell back to `return true`, silently hiding real conflicts.
+- **Watcher fires multiple scans on `npm install`** — the file watcher had no debounce. Running `npm install` modifies `package.json`, `package-lock.json`, and many files in sequence, triggering multiple concurrent scans. Added a 2-second debounce so only one scan fires after activity settles.
+
+### Changed
+- **License and activation messages fully internationalized** — all user-facing strings in `license.ts` and the `deactivateLicense` command were hardcoded in Spanish, breaking the experience for English VS Code users. All messages now route through the `i18n` system with English and Spanish variants.
+- **Command palette titles updated to English** — `ScanReq: Activar Plan Pro` and `ScanReq: Desactivar Plan Pro` renamed to `ScanReq: Activate Pro Plan` and `ScanReq: Deactivate Pro Plan` for consistency with VS Code conventions. The scan command retains both languages (`Analizar dependencias / Scan dependencies`).
+- **`revalidateLicenseIfNeeded` comment corrected** — the comment said "every 7 days" but the interval was already 24 hours since v2.5.1. Comment updated.
+- **`success.html` activation step corrected** — the "How to activate" instructions showed the Spanish command `ScanReq: Activar Plan Pro`. Corrected to `ScanReq: Activate Pro Plan`.
+- **`success.html` retry button on token not found** — if the token isn't available yet (Stripe webhook still processing), the error card now shows a "↻ Try again" button instead of only a static message.
+- **`index.html` version badge updated** — hero badge updated from `v2.5` to `v2.6`.
+
+### Refactored
+- **`safeUpdates` logic extracted to `shared.ts`** — the 40-line block that builds safe update recommendations (including CVE-patched version handling) was duplicated across 6 compatibility files. Extracted to `buildSafeUpdate()` and `buildAllSafeUpdates()` in `src/ecosystems/shared.ts`. Bug fixes now apply to all ecosystems at once.
+- **`compareVersions` extracted to `shared.ts`** — version comparison utilities were duplicated in 8+ files. Consolidated into a single implementation.
+- **`clearBomCache()` added to Java and Gradle parsers** — the BOM download cache was never cleared between scans. If the user updated their Spring Boot version and the watcher triggered a rescan, the old BOM was still in memory. Both adapters now clear the cache at scan start.
+- **`clearPipCache()` and `clearGoCache()` added** — tool availability caches for pip and Go were permanent for the VS Code session. If the user installed either tool after opening VS Code, ScanReq wouldn't detect it until restart. Adapters now clear these caches at scan start.
+
 ## [2.6.1] - 2026-05-22
 
 ### Fixed

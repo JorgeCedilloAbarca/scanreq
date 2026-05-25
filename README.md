@@ -56,7 +56,7 @@ All 8 ecosystems work automatically — no per-language setup.
 2. A background scan runs — no spinner blocking your editor, no command to type.
 3. The status bar badge updates: 🔴 critical issues / 🟠 outdated / 🟢 clean.
 4. Click the badge (or `Ctrl+Shift+P → ScanReq: Scan dependencies`) to open the full results panel.
-5. Every time you save a dependency file, the scan reruns.
+5. Every time you save a dependency file, the scan reruns automatically.
 
 Monorepo? ScanReq finds every dependency file across all subdirectories and shows them as separate sections in a single panel.
 
@@ -145,7 +145,7 @@ One click copies a structured prompt to your clipboard with the full scan result
 
 1. Purchase at [scanreq.com/pricing](https://scanreq.com/pricing)
 2. Your license token is delivered instantly on the success page and sent to your email.
-3. `Ctrl+Shift+P` → **ScanReq: Activar Plan Pro**
+3. `Ctrl+Shift+P` → **ScanReq: Activate Pro Plan**
 4. Enter your license token — Pro activates instantly.
 
 **Lost your token?** Recover it anytime at [scanreq.com/recover](https://scanreq.com/recover) — enter the email you used to purchase and we'll send it to you.
@@ -193,7 +193,7 @@ Pro license tokens are validated against scanreq.com. The token is stored in VS 
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-**v2.6.0** — Pro plan now available. Token recovery link added to error messages and license revocation notifications.
+**v2.6.2** — Security and reliability audit. OSV failures now shown as `⚠ CVE Error` instead of silent false-negative "No CVEs". Watcher debounce added. Full i18n coverage for license messages. Code quality improvements.
 
 ---
 

@@ -2,7 +2,7 @@
   "name": "scanreq",
   "displayName": "ScanReq",
   "description": "Real-time security scanner for Python, Node.js, Rust, Go, PHP, Ruby and Java (Maven & Gradle) dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "publisher": "trustdev",
   "author": {
     "name": "TrustDev"
@@ -72,11 +72,11 @@
       },
       {
         "command": "scanreq.activateLicense",
-        "title": "ScanReq: Activar Plan Pro"
+        "title": "ScanReq: Activate Pro Plan"
       },
       {
         "command": "scanreq.deactivateLicense",
-        "title": "ScanReq: Desactivar Plan Pro"
+        "title": "ScanReq: Deactivate Pro Plan"
       }
     ],
     "configuration": {
@@ -96,10 +96,10 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "pnpm run compile && npm run lint",
+    "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
     "test:unit": "vitest run",

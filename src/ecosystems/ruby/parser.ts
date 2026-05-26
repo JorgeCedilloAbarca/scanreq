@@ -175,9 +175,13 @@ function extractBaseVersion(spec: string): string {
  *         ...
  *       rake (13.1.0)
  *
- * Las gems de nivel top-level están indentadas con 6 espacios.
- * Las subdependencias con 8+.
- * Solo nos interesa el top-level (6 espacios exactos al inicio).
+ * Indentación real de Bundler (verificada en Bundler 2.x):
+ *   - Sección "specs:" indentada con 2 espacios
+ *   - Gems top-level indentadas con 4 espacios (e.g. "    rails (7.1.2)")
+ *   - Subdependencias indentadas con 6 espacios (e.g. "      actioncable (= 7.1.2)")
+ *
+ * Solo nos interesa el top-level. La regex usa lookahead negativo para
+ * descartar 5+ espacios y filtrar las subdeps limpiamente.
  */
 function readGemfileLock(gemfilePath: string): Map<string, string> {
 	const map = new Map<string, string>();
@@ -208,12 +212,17 @@ function readGemfileLock(gemfilePath: string): Map<string, string> {
 
 		if (!inSpecs) { continue; }
 
-		// Top-level gems en Gemfile.lock tienen indentación de 4 espacios (Bundler clásico)
-		// o 6 espacios (Bundler >= 2.4 en algunos entornos).
-		// Las subdependencias usan 8+ espacios — el regex /^ {4,6}/ las excluye correctamente
-		// porque no captura líneas con 8+ espacios (que empiezan con más de 6 espacios).
-		// Aceptamos exactamente 4 o 6 espacios al inicio de la línea.
-		const gemLineMatch = line.match(/^ {4,6}([a-zA-Z0-9_\-\.]+)\s+\(([^)]+)\)/);
+		// Fix M1 + B1: Top-level gems en Gemfile.lock tienen EXACTAMENTE 4 espacios
+		// de indentación. Las subdependencias usan 6 espacios (no "8+" como decía
+		// el comentario anterior). La regex original /^ {4,6}/ matcheaba ambas y
+		// funcionaba "por suerte" porque el primer match se quedaba (las top-level
+		// aparecen antes que sus subdeps en Bundler), pero era frágil: si una
+		// subdep se procesaba antes que la top-level homónima, se guardaba la
+		// versión con prefijo "= " en lugar de la versión limpia.
+		//
+		// Solución: anclar exactamente 4 espacios con lookahead negativo (?! ) para
+		// excluir 5+. Las subdeps (6 espacios) ahora se descartan correctamente.
+		const gemLineMatch = line.match(/^ {4}(?! )([a-zA-Z0-9_\-\.]+)\s+\(([^)]+)\)/);
 		if (!gemLineMatch) { continue; }
 
 		const name    = gemLineMatch[1];

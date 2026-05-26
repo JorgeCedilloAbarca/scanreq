@@ -217,9 +217,20 @@ function extractBoms(depsBlock: string, variables: Map<string, string>, fullCont
 	}
 
 	// 2. Plugin org.springframework.boot — BOM implícito spring-boot-dependencies
-	// Detecta: id 'org.springframework.boot' version '2.7.18'
-	//       o: id("org.springframework.boot") version "3.2.1"
-	const springBootPluginRe = /id\s*[('"""]org\.springframework\.boot['")]+\s*version\s*['"]([^'"]+)['"]/;
+	// Detecta:
+	//   id 'org.springframework.boot' version '2.7.18'        (Groovy DSL)
+	//   id "org.springframework.boot" version "2.7.18"        (Groovy DSL con dobles)
+	//   id("org.springframework.boot") version "3.2.1"        (Kotlin DSL)
+	//
+	// Fix C2: la regex anterior /id\s*[('"""]org...['")]+\s*version.../ tenía dos errores:
+	//   1. La clase [('"""]  contenía un literal triple-quote inválido (sin escape)
+	//   2. La clase ['")]+  no permitía cerrar paréntesis ANTES de buscar 'version'
+	// Resultado: matcheaba Groovy DSL pero NO Kotlin DSL (id("...") version "...").
+	// Todos los proyectos build.gradle.kts con Spring Boot perdían la resolución de BOM.
+	//
+	// Nueva regex: tolera (' o (" para Kotlin, ' o " para Groovy, y opcionalmente
+	// el ) de cierre antes de 'version'.
+	const springBootPluginRe = /id\s*\(?\s*['"]org\.springframework\.boot['"]\s*\)?\s*version\s*\(?\s*['"]([^'"]+)['"]/;
 	const springMatch = fullContent.match(springBootPluginRe);
 	if (springMatch) {
 		const springVersion = springMatch[1].trim();

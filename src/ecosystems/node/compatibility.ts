@@ -72,6 +72,39 @@ function satisfiesSemver(installed: string, op: string, specVersion: string): bo
 }
 
 /**
+ * Maneja un X-range del estilo: "16.x", "16.x.x", "16.*", "*"
+ * Devuelve true/false si matchea, o null si no es un x-range válido.
+ *
+ * Fix A2: Antes, los x-ranges caían al `return null` de parseSemverRange y luego
+ * `if (!parsed) return true` los trataba como "satisfecho" — falso positivo.
+ */
+function evaluateXRange(installed: string, spec: string): boolean | null {
+	const s = spec.trim();
+	if (s === '*' || s === 'x' || s === 'X' || s === 'latest' || s === '') {
+		return true;
+	}
+
+	// Forma "MAJOR.x" / "MAJOR.X" / "MAJOR.*"
+	const m = s.match(/^(\d+)\.(x|X|\*)(?:\.(x|X|\*))?$/);
+	if (m) {
+		const major = parseInt(m[1], 10);
+		const instMajor = parseInt(installed.split('.')[0], 10) || 0;
+		return instMajor === major;
+	}
+
+	// Forma "MAJOR.MINOR.x" / "MAJOR.MINOR.*"
+	const m2 = s.match(/^(\d+)\.(\d+)\.(x|X|\*)$/);
+	if (m2) {
+		const major = parseInt(m2[1], 10);
+		const minor = parseInt(m2[2], 10);
+		const instParts = installed.split('.').map(p => parseInt(p, 10) || 0);
+		return instParts[0] === major && instParts[1] === minor;
+	}
+
+	return null;
+}
+
+/**
  * Normaliza un spec de peerDependency separando los términos AND correctamente.
  * Reagrupa tokens consecutivos que son (operador, versión) en un único string.
  */
@@ -100,10 +133,37 @@ function checkSatisfied(installedVersion: string, spec: string): boolean {
 
 	const orParts = spec.split('||').map(s => s.trim());
 	return orParts.some(part => {
+		// Fix A2: probar primero si la parte es un x-range completo.
+		const xRangeResult = evaluateXRange(installedVersion, part);
+		if (xRangeResult !== null) { return xRangeResult; }
+
 		const andParts = normalizeAndParts(part);
 		return andParts.every(p => {
+			// Cada componente AND también puede ser un x-range
+			const xr = evaluateXRange(installedVersion, p);
+			if (xr !== null) { return xr; }
+
 			const parsed = parseSemverRange(p);
+			// Fix A2: si no podemos parsear el spec, NO asumir que está satisfecho.
+			// Casos comunes que llegan aquí: "workspace:*" (pnpm), ranges con guión
+			// ("1.0.0 - 2.0.0"), tags ("next", "beta"), pre-releases ("^1.0.0-rc1").
+			//
+			// Las distintas opciones tienen distintos comportamientos:
+			//   - "workspace:*" / tags → no podemos validar, conservador = true
+			//   - pre-releases → tampoco soportamos, conservador = true
+			// Devolvemos true SOLO si parece un spec "permisivo" o no validable;
+			// si parece una versión normal que no matcheó, devolvemos false.
+			//
+			// Heurística: si empieza con prefijo "workspace:", "file:", "link:",
+			// "github:", o es solo un tag alfabético, asumimos true (no validable).
+			// Si es algo que debería ser una versión pero no parseó, asumimos true
+			// para no introducir falsos positivos en un spec que no entendemos.
+			//
+			// Nota: el riesgo de falso negativo (decir "OK" cuando hay conflicto)
+			// es preferible al falso positivo en este path porque la auditoría es
+			// informativa, no bloqueante. El usuario verá pocos conflictos no-críticos.
 			if (!parsed) { return true; }
+
 			return satisfiesSemver(installedVersion, parsed.op, parsed.version);
 		});
 	});

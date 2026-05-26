@@ -1,6 +1,6 @@
 import { PackageResult, CompatibilityReport, ConflictDetail, SafeUpdate, calcMigrationRisk } from '../types';
 import { getLocale } from '../../i18n';
-import { compareVersions, buildAllSafeUpdates } from '../shared';
+import { compareVersions, versionToTuple, buildAllSafeUpdates } from '../shared';
 
 interface PyPIPackageData {
 	info: {
@@ -43,10 +43,6 @@ function parseSpecifiers(spec: string): Array<{ op: string; version: string }> {
 	}).filter(Boolean) as Array<{ op: string; version: string }>;
 }
 
-function versionToTuple(v: string): number[] {
-	return v.replace(/[^\d.]/g, '').split('.').map(n => parseInt(n) || 0);
-}
-
 function satisfiesSpecifier(version: string, op: string, specVersion: string): boolean {
 	const cmp = compareVersions(version, specVersion);
 	switch (op) {
@@ -57,6 +53,8 @@ function satisfiesSpecifier(version: string, op: string, specVersion: string): b
 		case '==': return cmp === 0;
 		case '!=': return cmp !== 0;
 		case '~=': {
+			// ~=1.4.5 → >=1.4.5,<1.5.0  (compatible release)
+			// Usar versionToTuple compartida (fix M4 — eliminada duplicada local)
 			const parts = versionToTuple(specVersion);
 			const floor = parts.slice(0, -1).join('.');
 			return cmp >= 0 && version.startsWith(floor + '.');
@@ -103,7 +101,17 @@ export async function runCompatibilityAnalysis(
 				continue;
 			}
 
-			const depMatch = depSpec.match(/^([A-Za-z0-9]([A-Za-z0-9._-]*)?)\\s*(?:\\(([^)]+)\\))?(.*)$/);
+			// Fix C1: la regex tenía dobles backslashes (\\s, \\(, \\)) que en un
+			// regex literal de TypeScript significan "literalmente \s" en lugar de
+			// "whitespace". Resultado: depMatch siempre era null y nunca se detectaba
+			// ningún conflicto. Esto rompía toda la detección de conflictos Python.
+			//
+			// Formato de requires_dist en PyPI:
+			//   "requests"
+			//   "requests>=2.0,<3.0"
+			//   "requests (>=2.0,<3.0)"
+			//   "urllib3 (<2.0)"
+			const depMatch = depSpec.match(/^([A-Za-z0-9]([A-Za-z0-9._-]*)?)\s*(?:\(([^)]+)\))?(.*)$/);
 			if (!depMatch) { continue; }
 
 			const depName = depMatch[1].toLowerCase().replace(/-/g, '_');

@@ -193,7 +193,7 @@ Pro license tokens are validated against scanreq.com. The token is stored in VS 
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-**v2.6.2** — Security and reliability audit. OSV failures now shown as `⚠ CVE Error` instead of silent false-negative "No CVEs". Watcher debounce added. Full i18n coverage for license messages. Code quality improvements.
+**v2.6.3** — Critical fix: Python conflict detection was 100% broken due to a regex bug (double backslash). Spring Boot Kotlin DSL plugin now detected in `build.gradle.kts`. Pre-release version comparisons fixed (RCs now correctly less than the stable). Node x-ranges (`16.x`) properly detected. Stripe checkout rate limited.
 
 ---
 

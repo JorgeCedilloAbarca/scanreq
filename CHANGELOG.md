@@ -2,6 +2,26 @@
 
 All notable changes to ScanReq will be documented in this file.
 
+## [2.6.3] - 2026-05-26
+
+### Fixed
+- **Python conflict detection was 100% broken** — the regex used to parse `requires_dist` strings from PyPI had double backslashes (`\\s`, `\\(`, `\\)`) in a regex literal, which means literal `\s`, `\(`, `\)` instead of whitespace and parens. Result: `depMatch` was always `null` and the function skipped every transitive dependency without analyzing it. The "Cross-version compatibility analysis" feature advertised for the Pro plan never reported a single Python conflict. Fixed with single backslashes.
+- **Spring Boot plugin not detected in Kotlin DSL `build.gradle.kts`** — the regex for the implicit `spring-boot-dependencies` BOM matched only Groovy DSL (`id 'org.springframework.boot' version '2.7.18'`) but not Kotlin DSL (`id("org.springframework.boot") version "3.2.1"`). The character class contained an unescaped triple-quote and the closing parenthesis wasn't allowed before `version`. Result: all Kotlin Gradle projects with Spring Boot resolved zero BOM-managed dependencies as version `unknown`. Rewritten to accept both DSLs with optional parentheses.
+- **`compareVersions` treated pre-releases as greater than the final release** — the implementation used `replace(/[^0-9.]/g, '')` which turned `1.0.0-rc1` into `1.0.01` and treated it as `[1,0,0,1]` — numerically *greater* than `[1,0,0]`. By semver, pre-releases must be *less* than the corresponding final. Affects: sorting of `fixedVersions` from OSV (could recommend `2.0.0-rc1` over the stable `2.0.0`), all version comparisons across ecosystems. Reimplemented to split version into core + pre-release components per semver rules.
+- **Node x-ranges `16.x`, `16.x.x` silently considered as satisfied** — `parseSemverRange` returned `null` for x-range specifiers (common in peerDependencies). The `checkSatisfied` function then treated `null` as "no spec to check" and returned `true`, hiding real conflicts. A React 17 project with a peerDep of `16.x` would not be flagged. Added explicit `evaluateXRange()` that resolves x-range specs against the installed major (and minor when present).
+- **`create-checkout` Worker had no rate limit** — every other Worker uses KV-backed rate limiting except this one. An attacker could create thousands of Stripe checkout sessions, consuming Stripe API quota and potentially flagging the account for abuse. Added 5 checkouts per IP per hour with the same KV pattern as the other Workers.
+- **`create-checkout` accepted any string as `currency`** — the worker did `PRICE_IDS[currency] ?? PRICE_IDS.usd`, silently falling back to USD when receiving unexpected values. Now validates against a closed set `{'usd', 'eur'}` and returns 500 if the corresponding PRICE_ID env var is missing instead of silently charging USD.
+- **`success.html` retry button left the error card visible on success** — if the user clicked "Try again" and the second request succeeded, the red error card stayed visible above the token. Now hidden when the retry returns a valid token.
+- **`Gemfile.lock` parser docstring described the wrong indentation** — comments stated "top-level: 6 spaces, subdependencies: 8+" but Bundler 2.x uses 4 spaces for top-level and 6 for subdeps. The code was correct (regex `^ {4}(?! )` already filters properly) but the misleading docstring made future maintenance error-prone. Docstring corrected.
+- **`validate-license` discarded errors from the `activated_at` UPDATE** — the UPDATE that registers first activation didn't check its result. If the column was missing or the service role lacked permissions, the activation timestamp was silently dropped. Now logs the error via `console.error` to make schema issues visible in Worker logs.
+- **`stripe-webhook` lost the purchase email on transient Resend failures** — a single Resend timeout left the token stored but the email never sent; the user had to manually use `/recover` to get their token. Added a single retry with a 1.5s delay before giving up. If both attempts fail, the user can still recover via `scanreq.com/recover` as before.
+
+### Changed
+- **`netlify.toml` reduced to publish-only** — the file declared redirects from `/api/*` to `/.netlify/functions` and listed legacy serverless functions that no longer exist on the live deployment (everything is on Cloudflare Workers now). If anyone re-enabled Netlify deploy by accident, the old functions would re-activate without the latest security fixes. Now contains only `[build] publish = "."` so a Netlify deploy serves only the static site and the obsolete functions cannot be reached.
+
+### Refactored
+- **`versionToTuple` in `python/compatibility.ts` was a duplicate** — the function had been left behind during the D2 refactor that moved version utilities to `shared.ts`. Removed and replaced with an import from `shared.ts`.
+
 ## [2.6.2] - 2026-05-25
 
 ### Security

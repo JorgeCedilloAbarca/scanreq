@@ -86,7 +86,11 @@ export async function checkMaven(
 
 		let vulnerabilities: Vulnerability[] = [];
 		let cveCheckFailed = false;
-		if (exactVersion || isPro) {
+		// Fix PN1: antes era `exactVersion || isPro`, lo cual buscaba CVEs en versiones
+		// no exactas (e.g. versiones resueltas desde BOM o propiedades Maven que podrían
+		// no ser la versión real instalada). Sin detectedByTool para Java (no lee el
+		// lockfile de Maven/Gradle), solo buscamos CVEs para versiones exactas.
+		if (exactVersion) {
 			const cveResult = await checkCVEs(name, installedVersion, OSV_ECOSYSTEM);
 			vulnerabilities = cveResult.vulnerabilities;
 			cveCheckFailed = cveResult.failed;

@@ -36,7 +36,12 @@ export async function checkCrate(
 		const latestVersion: string = data.crate?.newest_version ?? 'unknown';
 
 		// CVEs: en Free solo para versiones exactas
-		const canCheckCVEs = exactVersion || isPro;
+		// Fix PN1: antes era `exactVersion || isPro`, lo cual buscaba CVEs en versiones
+		// estimadas del spec (e.g. "1.0" extraído de `serde = { version = "^1.0" }`).
+		// En Rust, el formato tabla de Cargo siempre tiene exactVersion: false porque
+		// ^ es el operador implícito. Sin Cargo.lock, no podemos saber la versión real.
+		// Ahora seguimos el mismo patrón de Python/Node: solo exactas o detectadas por tool.
+		const canCheckCVEs = exactVersion;
 		let cveCheckFailed = false;
 
 		let vulnerabilities: import("../types").Vulnerability[];

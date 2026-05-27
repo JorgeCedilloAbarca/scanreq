@@ -36,7 +36,22 @@ const ECOSYSTEM_ICONS: Record<EcosystemId, string> = {
 	php:    '🐘',
 	ruby:   '💎',
 	java:   '☕',
-	gradle: '🐘',
+	gradle: '☕',
+};
+
+// Fix PN3: nombres de display oficiales para el header del panel.
+// Antes se usaba capitalize(ecosystem.id) → "Node" en vez de "Node.js",
+// "Php" en vez de "PHP", etc. Los adapters tienen displayName pero webview
+// no tiene acceso al adapter — usamos un mapa estático equivalente.
+const ECOSYSTEM_DISPLAY_NAMES: Record<EcosystemId, string> = {
+	python: 'Python',
+	node:   'Node.js',
+	rust:   'Rust',
+	go:     'Go',
+	php:    'PHP',
+	ruby:   'Ruby',
+	java:   'Java (Maven)',
+	gradle: 'Java (Gradle)',
 };
 
 const ECOSYSTEM_REGISTRY_LINKS: Record<EcosystemId, (name: string) => string> = {
@@ -62,6 +77,13 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 	const inexact = packages.filter(p => !p.exactVersion);
 	const detectedByTool = packages.filter(p => p.detectedByTool);
 	const cveChecksFailed = packages.filter(p => p.cveCheckFailed);
+
+	// Fix GR4: contar paquetes con CVEs pero sin parche disponible (up-to-date + CVEs sin fixedVersion).
+	// Esto permite distinguir en el insight "N can be updated, M require mitigation/replacement".
+	const unpatchedCVEs = packages.filter(p =>
+		p.upToDate && p.vulnerabilities.length > 0 &&
+		p.vulnerabilities.every(v => !v.fixedVersion)
+	);
 
 	const insights: { type: string; message: string }[] = [];
 
@@ -89,10 +111,20 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 				message: `Tienes ${outdated.length} paquetes desactualizados. No actualices todos a la vez — hazlo de forma gradual y ejecuta tus tests tras cada cambio.`
 			});
 		} else if (outdated.length > 0) {
-			insights.push({
-				type: 'info',
-				message: `${outdated.length} paquete${outdated.length > 1 ? 's disponibles' : ' disponible'} para actualizar. Revisa los changelogs antes de actualizar.`
-			});
+			// Fix JM3: distinguir cuántos son actualizables vs cuántos requieren mitigación.
+			// Fix GR4: cuando hay paquetes con CVEs sin parche (unpatched), la redacción
+			// "N paquetes disponibles para actualizar" es confusa porque no todos son actualizables.
+			if (unpatchedCVEs.length > 0) {
+				insights.push({
+					type: 'info',
+					message: `${outdated.length} paquete${outdated.length > 1 ? 's disponibles' : ' disponible'} para actualizar. ${unpatchedCVEs.length} paquete${unpatchedCVEs.length > 1 ? 's requieren' : ' requiere'} mitigación o reemplazo (sin parche disponible).`
+				});
+			} else {
+				insights.push({
+					type: 'info',
+					message: `${outdated.length} paquete${outdated.length > 1 ? 's disponibles' : ' disponible'} para actualizar. Revisa los changelogs antes de actualizar.`
+				});
+			}
 		}
 		if (isPro && detectedByTool.length > 0) {
 			insights.push({
@@ -139,10 +171,18 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 				message: `You have ${outdated.length} outdated packages. Don't update all at once — do it gradually and run your tests after each change.`
 			});
 		} else if (outdated.length > 0) {
-			insights.push({
-				type: 'info',
-				message: `${outdated.length} package${outdated.length > 1 ? 's' : ''} available to update. Review changelogs before updating.`
-			});
+			// Fix JM3 + GR4: distinguish updatable from unpatched
+			if (unpatchedCVEs.length > 0) {
+				insights.push({
+					type: 'info',
+					message: `${outdated.length} package${outdated.length > 1 ? 's' : ''} available to update. ${unpatchedCVEs.length} package${unpatchedCVEs.length > 1 ? 's require' : ' requires'} mitigation or replacement (no patch available).`
+				});
+			} else {
+				insights.push({
+					type: 'info',
+					message: `${outdated.length} package${outdated.length > 1 ? 's' : ''} available to update. Review changelogs before updating.`
+				});
+			}
 		}
 		if (isPro && detectedByTool.length > 0) {
 			insights.push({
@@ -172,17 +212,37 @@ function generateInsights(packages: PackageResult[], isPro: boolean, ecosystem: 
 
 // ─── Sección de compatibilidad (Pro) ─────────────────────────────────────────
 
-function generateCompatibilitySection(report: CompatibilityReport, locale: string): string {
+function generateCompatibilitySection(report: CompatibilityReport, locale: string, ecosystem: EcosystemId): string {
 	const { conflicts, safeUpdates, toolUnavailable } = report;
 
 	let html = `<div class="compat-section">`;
 	html += `<h3 class="subsection-title">${locale === 'es' ? '🔍 Análisis de Compatibilidad Pro' : '🔍 Pro Compatibility Analysis'}</h3>`;
 
 	if (toolUnavailable) {
+		// Fix G1: mensajes específicos por ecosistema en lugar del genérico
+		// "version detection tool". Cada ecosistema necesita una herramienta distinta
+		// para detección de versiones o análisis de dependencias transitivas.
+		const toolMessages: Partial<Record<EcosystemId, { es: string; en: string }>> = {
+			go: {
+				es: '⚠ Go CLI no encontrado en el PATH. No se puede ejecutar el análisis de dependencias transitivas (go mod graph).',
+				en: '⚠ Go CLI not found in PATH. Skipping transitive dependency graph analysis.',
+			},
+			python: {
+				es: '⚠ pip no encontrado en el PATH. Instálalo para que ScanReq pueda detectar versiones instaladas automáticamente.',
+				en: '⚠ pip not found in PATH. Install it so ScanReq can auto-detect installed versions.',
+			},
+			node: {
+				es: '⚠ No se encontró node_modules ni lockfile. Ejecuta npm install para que ScanReq pueda detectar versiones instaladas.',
+				en: '⚠ No node_modules or lockfile found. Run npm install so ScanReq can detect installed versions.',
+			},
+		};
+		const msg = toolMessages[ecosystem];
 		html += `<div class="insight insight-warning">
-			${locale === 'es'
-				? '⚠ La herramienta de detección de versiones no está disponible en el PATH. Instálala para que ScanReq pueda completar el análisis de compatibilidad.'
-				: '⚠ The version detection tool is not available in PATH. Install it so ScanReq can complete the compatibility analysis.'
+			${msg
+				? (locale === 'es' ? msg.es : msg.en)
+				: locale === 'es'
+					? '⚠ La herramienta de detección de versiones no está disponible en el PATH. Instálala para que ScanReq pueda completar el análisis de compatibilidad.'
+					: '⚠ The version detection tool is not available in PATH. Install it so ScanReq can complete the compatibility analysis.'
 			}
 		</div>`;
 	}
@@ -308,7 +368,13 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 				? safeInstalled
 				: `<span style="color:#ffcc77;" title="${locale === 'es' ? 'Versión no exacta' : 'Non-exact version'}">∼${safeInstalled}</span>`;
 
-		const majorBadge = isPro && !pkg.upToDate && pkg.majorVersionJump >= 1
+		// Fix PN2: solo mostrar el badge ⚠ Major cuando la versión instalada está
+		// confirmada (exacta o detectada por tool). Si la versión viene de un spec
+		// como ~1.5.1, el cálculo de major jump es una estimación no verificada:
+		// si marcamos "⚠ +2 major" junto a "⚠ Unverified" enviamos un mensaje
+		// contradictorio ("no sé qué versión tienes pero sé que hay 2 majors de salto").
+		const versionConfirmed = pkg.exactVersion || pkg.detectedByTool;
+		const majorBadge = isPro && !pkg.upToDate && pkg.majorVersionJump >= 1 && versionConfirmed
 			? pkg.majorVersionJump === 1
 				? `<span class="badge major" title="${locale === 'es' ? 'Salto de versión mayor — puede incluir cambios incompatibles' : 'Major version jump — may include breaking changes'}">⚠ Major</span>`
 				: `<span class="badge major" title="${locale === 'es' ? 'Salto de versión mayor — puede incluir cambios incompatibles' : 'Major version jump — may include breaking changes'}">⚠ +${pkg.majorVersionJump} major</span>`
@@ -336,13 +402,20 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 					? `<span class="badge safe">${t('badgeNoCVEs')}</span>`
 					: `<span class="badge unverified" title="${locale === 'es' ? 'Versión no fijada — no se puede verificar si esta versión exacta tiene CVEs conocidos. Fija la versión o activa el Plan Pro.' : 'Version not pinned — cannot verify if this exact version has known CVEs. Pin the version or activate the Pro plan.'}">⚠ ${locale === 'es' ? 'No verificado' : 'Unverified'}</span>`;
 
-		const vulnDetails = pkg.vulnerabilities.map(v => `
+		const vulnDetails = pkg.vulnerabilities.map(v => {
+			// Fix G2: si el CVE solo afecta a una plataforma específica (e.g. Windows),
+			// mostrar un badge para que el usuario sepa que puede no afectarle.
+			const platformBadge = v.platform
+				? ` <span class="vuln-platform" title="${locale === 'es' ? `Solo afecta a ${v.platform}` : `Affects ${v.platform} only`}">${escapeHtml(v.platform)} only</span>`
+				: '';
+			return `
 			<div class="vuln-detail">
 				<span class="vuln-id" style="color:${getSeverityColor(v.severity)};">${escapeHtml(v.id)}</span>
-				<span class="vuln-severity" style="color:${getSeverityColor(v.severity)};">[${escapeHtml(v.severity)}]</span>
+				<span class="vuln-severity" style="color:${getSeverityColor(v.severity)};">[${escapeHtml(v.severity)}]</span>${platformBadge}
 				<span class="vuln-summary">${escapeHtml(v.summary)}</span>
 			</div>
-		`).join('');
+		`;
+		}).join('');
 
 		const pkgLink = getLinkFn(pkg.name);
 
@@ -356,7 +429,7 @@ function generatePackageTable(result: ScanResult, isPro: boolean, locale: string
 	}).join('');
 
 	const compatHtml = isPro && compatReport
-		? generateCompatibilitySection(compatReport, locale)
+		? generateCompatibilitySection(compatReport, locale, ecosystem)
 		: '';
 
 	return `
@@ -452,19 +525,6 @@ function buildAIPrompt(results: ScanResult[], locale: string): string {
 
 // ─── Punto de entrada principal ───────────────────────────────────────────────
 
-function getRelativePath(filePath: string): string {
-	const workspaceFolders = (globalThis as any).__vscode_workspace_folders as string[] | undefined;
-	const normalized = filePath.replace(/\\/g, '/');
-	const parts = normalized.split('/');
-	if (parts.length >= 2) {
-		const last = parts[parts.length - 1];
-		const parent = parts[parts.length - 2];
-		const rootLikeFolders = new Set(['src', 'lib', 'app', 'packages', 'apps', 'services', 'modules']);
-		return rootLikeFolders.has(parent) ? `${parent}/${last}` : `${parent}/${last}`;
-	}
-	return parts[parts.length - 1] ?? filePath;
-}
-
 export function getWebviewContent(results: ScanResult[], license: LicenseStatus): string {
 	const locale = getLocale();
 	const isPro = license.active;
@@ -523,7 +583,7 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			<div class="ecosystem-section">
 				<div class="ecosystem-header">
 					<span class="ecosystem-icon">${icon}</span>
-					<span class="ecosystem-name">${escapeHtml(result.ecosystem.charAt(0).toUpperCase() + result.ecosystem.slice(1))}</span>
+					<span class="ecosystem-name">${escapeHtml(ECOSYSTEM_DISPLAY_NAMES[result.ecosystem] ?? result.ecosystem)}</span>
 					<span class="ecosystem-file">${fileDisplay}</span>
 				</div>
 				${tableHtml}
@@ -655,6 +715,8 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 			}
 			.vuln-detail { margin-top: 6px; font-size: 11px; }
 			.vuln-id { font-weight: 600; margin-right: 6px; }
+			/* Fix G2: badge para CVEs específicos de plataforma (e.g. Windows only) */
+			.vuln-platform { font-size: 10px; font-weight: 600; background: rgba(100,160,255,0.15); color: #64a0ff; border-radius: 3px; padding: 1px 5px; margin-left: 4px; }
 			.vuln-summary { color: var(--vscode-descriptionForeground); }
 			.recommendation { color: #5fcc7f; font-size: 12px; }
 			.insights { display: flex; flex-direction: column; gap: 10px; }
@@ -697,9 +759,9 @@ export function getWebviewContent(results: ScanResult[], license: LicenseStatus)
 		</details>
 		` : `<div class="subtitle">${subtitle}</div>`}
 		<div class="summary">
-			<div class="summary-card ok">✓ ${okCount} ${t('upToDate')}</div>
-			<div class="summary-card outdated">↑ ${outdatedCount} ${t('outdated')}</div>
-			<div class="summary-card vuln">⚠ ${vulnCount} ${t('withCVEs')}</div>
+			<div class="summary-card ok" title="${locale === 'es' ? 'Paquetes al día y sin vulnerabilidades conocidas' : 'Up to date and no known vulnerabilities'}">✓ ${okCount} ${t('upToDate')}</div>
+			<div class="summary-card outdated" title="${locale === 'es' ? 'Paquetes con actualización disponible (puede incluir paquetes vulnerables)' : 'Packages with an update available (may include vulnerable packages)'}">↑ ${outdatedCount} ${t('outdated')}</div>
+			<div class="summary-card vuln" title="${locale === 'es' ? 'Paquetes con CVEs conocidos (puede incluir paquetes desactualizados)' : 'Packages with known CVEs (may include outdated packages)'}">⚠ ${vulnCount} ${t('withCVEs')}</div>
 		</div>
 		${ecosystemSections}
 		${isPro ? `<div class="major-note">

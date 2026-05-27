@@ -19,15 +19,66 @@ const MAX_DEPTH             = 5;
 const MAX_FILES_PER_PATTERN = 20;
 
 /**
+ * Fix GR3: comprueba si una ruta relativa coincide con algún patrón de exclusión.
+ *
+ * Soporta dos formatos de glob:
+ * - Prefijo exacto: "src/functionalTest" matchea "src/functionalTest/resources/setup1"
+ * - Doble wildcard: un patrón que empieza con dos asteriscos y barra matchea en cualquier nivel
+ * - Wildcard simple: "*Test" matchea "functionalTest", "unitTest", etc.
+ *
+ * No incluye defaults para evitar ocultar dependencias reales en proyectos donde
+ * paths como "test/" o "fixtures/" contienen código de producción.
+ */
+function matchesExclude(relPath: string, patterns: string[]): boolean {
+	if (patterns.length === 0) { return false; }
+
+	for (const pattern of patterns) {
+		if (!pattern) { continue; }
+		const p = pattern.replace(/\\/g, '/');
+
+		if (p.startsWith('**/')) {
+			// "** /foo/bar" → coincide si algún sufijo del path matchea "foo/bar"
+			const suffix = p.slice(3);
+			if (relPath === suffix || relPath.endsWith('/' + suffix) || relPath.includes('/' + suffix + '/')) {
+				return true;
+			}
+		} else if (p.includes('*')) {
+			// Glob simple: convertir * en regex [^/]*
+			const regexStr = '^' + p.replace(/\*/g, '[^/]*');
+			try {
+				const re = new RegExp(regexStr);
+				if (re.test(relPath)) { return true; }
+			} catch {
+				// Patrón inválido — ignorar
+			}
+		} else {
+			// Prefijo exacto: "src/functionalTest" matchea cualquier descendiente
+			if (relPath === p || relPath.startsWith(p + '/')) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
  * Búsqueda síncrona y rápida de archivos de dependencias.
  * No usa setImmediate — el walk es lo suficientemente rápido
  * cuando excluimos los directorios pesados correctamente.
+ *
+ * Fix GR3: lee la setting `scanreq.excludePaths` (array de globs simples)
+ * para excluir paths que el usuario no quiere escanear (e.g. test fixtures,
+ * third-party vendored code, etc). Sin defaults para no ocultar deps reales.
  */
 function findDependencyFiles(workspaceRoot: string): Array<{ filePath: string; fileName: string }> {
 	const patterns    = getAllWatchPatterns();
 	const patternSet  = new Set(patterns);
 	const found: Array<{ filePath: string; fileName: string }> = [];
 	const countPerPattern = new Map<string, number>();
+
+	// Fix GR3: leer paths excluidos por el usuario
+	const config = vscode.workspace.getConfiguration('scanreq');
+	const excludePatterns: string[] = config.get<string[]>('excludePaths', []);
 
 	function walk(dir: string, depth: number): void {
 		if (depth > MAX_DEPTH) { return; }
@@ -44,7 +95,16 @@ function findDependencyFiles(workspaceRoot: string): Array<{ filePath: string; f
 			if (entry.isSymbolicLink()) { continue; }
 			if (entry.isDirectory()) {
 				if (EXCLUDE_DIRS.has(entry.name) || entry.name.startsWith('.')) { continue; }
-				walk(path.join(dir, entry.name), depth + 1);
+
+				// Fix GR3: comprobar si este directorio coincide con algún excludePath.
+				// Formato: ruta relativa desde workspace root usando / como separador.
+				// El usuario configura globs simples como "src/functionalTest",
+				// "**/test/resources", "**/fixtures", etc.
+				const fullDir = path.join(dir, entry.name);
+				const relDir = path.relative(workspaceRoot, fullDir).replace(/\\/g, '/');
+				if (matchesExclude(relDir, excludePatterns)) { continue; }
+
+				walk(fullDir, depth + 1);
 			} else if (entry.isFile()) {
 				if (!patternSet.has(entry.name)) { continue; }
 				const count = countPerPattern.get(entry.name) ?? 0;
@@ -76,6 +136,11 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let activePanel: vscode.WebviewPanel | undefined;
 	let scanInProgress = false;
+	// Fix M3: si un scan se solicita mientras hay otro en curso, en lugar de
+	// descartarlo silenciosamente lo marcamos como pendiente. Cuando el scan
+	// actual termine, si hay uno pendiente, lo ejecutamos. Esto evita perder
+	// la actualización tras modificar un archivo durante un scan largo.
+	let pendingAutoScan = false;
 
 	// Fix R3: timer para debounce del watcher — se limpia en deactivate()
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -93,7 +158,14 @@ export function activate(context: vscode.ExtensionContext) {
 	};
 
 	const runScan = async (autoTriggered = false) => {
-		if (scanInProgress) { return; }
+		// Fix M3: si hay un scan en curso y este es un auto-scan del watcher,
+		// lo marcamos como pendiente para ejecutarlo al terminar el actual.
+		// Los scans manuales (autoTriggered = false) no se re-encolan: el usuario
+		// puede pulsar el botón de nuevo.
+		if (scanInProgress) {
+			if (autoTriggered) { pendingAutoScan = true; }
+			return;
+		}
 		scanInProgress = true;
 
 		try {
@@ -164,6 +236,13 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		} finally {
 			scanInProgress = false;
+			// Fix M3: ejecutar scan pendiente si hubo cambios durante el scan actual
+			if (pendingAutoScan) {
+				pendingAutoScan = false;
+				// setTimeout(0) para evitar recursión profunda y permitir que
+				// otros eventos del bucle se procesen primero
+				setTimeout(() => runScan(true), 0);
+			}
 		}
 	};
 

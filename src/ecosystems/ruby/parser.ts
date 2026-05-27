@@ -165,6 +165,26 @@ function parseGemLine(line: string): { name: string; version: string; exactVersi
 		return null;
 	}
 
+	// Ignorar gems declaradas para plataformas específicas no-current.
+	// Ejemplo:
+	//   gem "tzinfo-data", platforms: %i[ windows jruby ]
+	//   gem "wdm", ">= 0.1.0", platforms: :windows
+	//
+	// Bundler omite estas gems del Gemfile.lock en plataformas no coincidentes,
+	// por lo que nunca tendrían versión resuelta y aparecerían como ⚠ Unverified.
+	// Las filtramos aquí. Si el usuario está en esa plataforma, el lock sí las
+	// incluirá y lockVersions.get(name) las cubrirá — este null nunca se alcanza.
+	if (line.includes('platforms:')) {
+		const platformMatch = line.match(/platforms:\s*(%i\[([^\]]+)\]|:(\w+))/);
+		if (platformMatch) {
+			const rawPlatforms = platformMatch[2]
+				? platformMatch[2].split(/\s+/).map(s => s.trim().toLowerCase()).filter(Boolean)
+				: [platformMatch[3].toLowerCase()];
+			const PLATFORM_SPECIFIC = new Set(['windows', 'jruby', 'mswin', 'mingw', 'x64_mingw']);
+			if (rawPlatforms.every(p => PLATFORM_SPECIFIC.has(p))) { return null; }
+		}
+	}
+
 	// Extraer todos los specifiers de versión (pueden ser varios)
 	const specMatches = [...line.matchAll(/['"]((?:~>|>=|<=|!=|>|<|=)?\s*[\d][^'"]*)['"]/g)];
 

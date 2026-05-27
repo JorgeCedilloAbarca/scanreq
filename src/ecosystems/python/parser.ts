@@ -118,10 +118,20 @@ export function parseRequirementsFile(
 	const dir = path.dirname(resolvedPath);
 
 	for (const rawLine of content.split('\n')) {
-		const line = rawLine.trim();
+		// Limpiar \r (CRLF) y backslash de continuación de línea (formato pip-compile)
+		// Ejemplo pip-compile: "aiofile==3.9.0 \"  →  "aiofile==3.9.0"
+		const line = rawLine.trim().replace(/\\$/, '').trim();
 
 		// Ignorar vacías y comentarios puros
 		if (!line || line.startsWith('#')) { continue; }
+
+		// Ignorar líneas de continuación de pip-compile:
+		//   --hash=sha256:...
+		//   # via somepackage
+		// Las líneas --hash empiezan con -- (ya filtradas abajo), pero las
+		// capturamos aquí explícitamente para claridad y para no confundirlas
+		// con --requirement que sí nos interesa.
+		// Nota: las líneas "    # via" ya quedan cubiertas por el filtro de #.
 
 		// Detectar -r / --requirement ANTES del filtro genérico de --
 		// (--requirement empieza con -- pero es una referencia válida a otro archivo)

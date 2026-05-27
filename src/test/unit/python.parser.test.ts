@@ -126,6 +126,24 @@ describe('parseRequirementsFile — archivo simple', () => {
 		expect(result).toHaveLength(1);
 		expect(result[0].name).toBe('requests');
 	});
+
+	it('parsea formato pip-compile con hashes — elimina \\ trailing y ignora líneas --hash', () => {
+		// Formato generado por pip-compile --generate-hashes (patrón apt-mirror2)
+		const root = writeRequirementsTree({
+			'requirements.txt': [
+				'aiofile==3.9.0 \\',
+				'    --hash=sha256:ce2f6c1571538cbdfa0143b04e16b208ecb0e9cb4148e528af8a640ed51cc8aa \\',
+				'    --hash=sha256:e5ad718bb148b265b6df1b3752c4d1d83024b93da9bd599df74b9d9ffcf7919b',
+				'    # via apt-mirror2',
+				'requests==2.31.0 \\',
+				'    --hash=sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab',
+			].join('\n'),
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(2);
+		expect(result[0]).toMatchObject({ name: 'aiofile', version: '3.9.0', exactVersion: true });
+		expect(result[1]).toMatchObject({ name: 'requests', version: '2.31.0', exactVersion: true });
+	});
 });
 
 // ─── parseRequirementsFile — directiva -r ────────────────────────────────────

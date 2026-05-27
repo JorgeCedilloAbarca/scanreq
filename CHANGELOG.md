@@ -2,25 +2,39 @@
 
 All notable changes to ScanReq will be documented in this file.
 
-## [2.6.3] - 2026-05-26
+## [2.6.4] - 2026-05-27
 
 ### Fixed
-- **Python conflict detection was 100% broken** — the regex used to parse `requires_dist` strings from PyPI had double backslashes (`\\s`, `\\(`, `\\)`) in a regex literal, which means literal `\s`, `\(`, `\)` instead of whitespace and parens. Result: `depMatch` was always `null` and the function skipped every transitive dependency without analyzing it. The "Cross-version compatibility analysis" feature advertised for the Pro plan never reported a single Python conflict. Fixed with single backslashes.
-- **Spring Boot plugin not detected in Kotlin DSL `build.gradle.kts`** — the regex for the implicit `spring-boot-dependencies` BOM matched only Groovy DSL (`id 'org.springframework.boot' version '2.7.18'`) but not Kotlin DSL (`id("org.springframework.boot") version "3.2.1"`). The character class contained an unescaped triple-quote and the closing parenthesis wasn't allowed before `version`. Result: all Kotlin Gradle projects with Spring Boot resolved zero BOM-managed dependencies as version `unknown`. Rewritten to accept both DSLs with optional parentheses.
-- **`compareVersions` treated pre-releases as greater than the final release** — the implementation used `replace(/[^0-9.]/g, '')` which turned `1.0.0-rc1` into `1.0.01` and treated it as `[1,0,0,1]` — numerically *greater* than `[1,0,0]`. By semver, pre-releases must be *less* than the corresponding final. Affects: sorting of `fixedVersions` from OSV (could recommend `2.0.0-rc1` over the stable `2.0.0`), all version comparisons across ecosystems. Reimplemented to split version into core + pre-release components per semver rules.
-- **Node x-ranges `16.x`, `16.x.x` silently considered as satisfied** — `parseSemverRange` returned `null` for x-range specifiers (common in peerDependencies). The `checkSatisfied` function then treated `null` as "no spec to check" and returned `true`, hiding real conflicts. A React 17 project with a peerDep of `16.x` would not be flagged. Added explicit `evaluateXRange()` that resolves x-range specs against the installed major (and minor when present).
-- **`create-checkout` Worker had no rate limit** — every other Worker uses KV-backed rate limiting except this one. An attacker could create thousands of Stripe checkout sessions, consuming Stripe API quota and potentially flagging the account for abuse. Added 5 checkouts per IP per hour with the same KV pattern as the other Workers.
-- **`create-checkout` accepted any string as `currency`** — the worker did `PRICE_IDS[currency] ?? PRICE_IDS.usd`, silently falling back to USD when receiving unexpected values. Now validates against a closed set `{'usd', 'eur'}` and returns 500 if the corresponding PRICE_ID env var is missing instead of silently charging USD.
-- **`success.html` retry button left the error card visible on success** — if the user clicked "Try again" and the second request succeeded, the red error card stayed visible above the token. Now hidden when the retry returns a valid token.
-- **`Gemfile.lock` parser docstring described the wrong indentation** — comments stated "top-level: 6 spaces, subdependencies: 8+" but Bundler 2.x uses 4 spaces for top-level and 6 for subdeps. The code was correct (regex `^ {4}(?! )` already filters properly) but the misleading docstring made future maintenance error-prone. Docstring corrected.
-- **`validate-license` discarded errors from the `activated_at` UPDATE** — the UPDATE that registers first activation didn't check its result. If the column was missing or the service role lacked permissions, the activation timestamp was silently dropped. Now logs the error via `console.error` to make schema issues visible in Worker logs.
-- **`stripe-webhook` lost the purchase email on transient Resend failures** — a single Resend timeout left the token stored but the email never sent; the user had to manually use `/recover` to get their token. Added a single retry with a 1.5s delay before giving up. If both attempts fail, the user can still recover via `scanreq.com/recover` as before.
+- **Python conflict detection was 100% broken** — the regex in `python/compatibility.ts` had double backslashes (`\\s`, `\\(`, `\\)`) in a regex literal, meaning literal `\s` instead of whitespace. `depMatch` was always `null`, so the function skipped every transitive dependency. The "Cross-version compatibility analysis" Pro feature never reported a single Python conflict.
+- **Spring Boot plugin not detected in Kotlin DSL** — the regex for `build.gradle.kts` matched Groovy DSL but not Kotlin DSL (`id("org.springframework.boot") version "3.2.1"`). All Kotlin Gradle projects with Spring Boot resolved zero BOM-managed dependencies. Rewritten to accept both DSLs with optional parentheses.
+- **`compareVersions` treated pre-releases as greater than the final release** — `1.0.0-rc1` was parsed as `[1,0,0,1]`, numerically greater than `[1,0,0]`. Reimplemented to split core from pre-release per semver rules: pre-releases are now correctly less than the corresponding final.
+- **Node x-ranges (`16.x`, `16.x.x`) silently treated as satisfied** — `parseSemverRange` returned `null` for x-range specifiers, and `checkSatisfied` treated `null` as "compatible". React 17 with a peerDep of `16.x` was not flagged. Added `evaluateXRange()` to resolve x-range specs correctly.
+- **Gradle icon was PHP elephant instead of Java coffee cup** — `ECOSYSTEM_ICONS` had `gradle: '🐘'` (PHP) instead of `gradle: '☕'` (Java).
+- **CalVer versions caused absurd major jump badges** — `org.json:json` version `20231013 → 20250517` showed `⚠ +19504 major`. Added CalVer detection (YYYYMMDD, YYYY.MM.DD) that returns 0 for major jump, preventing false Phase 3 classification.
+- **CRITICAL/HIGH CVEs could land in Phase 2 (Medium risk)** — `calcMigrationRisk` only checked major jump and boolean `hasCVEs`, not severity. A CRITICAL CVE on an up-to-date package went to Phase 2. Now accepts `maxSeverity` parameter; CRITICAL and HIGH force Phase 3 regardless of major jump.
+- **Pre-1.0 versions (`0.x.y`) treated as low-risk updates** — in semver, any change in the second component of a 0.x version can be breaking. `0.28.0 → 0.45.0` returned `majorJump: 0` and went to Phase 1. Now uses the second component as effective major for 0.x versions.
+- **Major badge shown on unverified versions** — `⚠ +2 major` appeared next to `⚠ Unverified`, contradicting itself (can't know the exact jump if the installed version isn't confirmed). Major badge now hidden when `!exactVersion && !detectedByTool`.
+- **Ecosystem headers showed "Node", "Php" instead of "Node.js", "PHP"** — used `capitalize(ecosystem.id)` instead of official display names. Added `ECOSYSTEM_DISPLAY_NAMES` map with correct names including "Java (Maven)" and "Java (Gradle)".
+- **Rust and Java checked CVEs on estimated versions** — `rust/registry.ts` and `java/registry.ts` used `exactVersion || isPro` to gate CVE checks, meaning Pro users got CVE results for versions extracted from specs (`^1.0` → `1.0`) rather than the actual installed version. Now uses `exactVersion` only, matching the pattern already applied to Python, Node, PHP, and Ruby.
+- **`success.html` retry button left error card visible on success** — if the user clicked "Try again" and the token was found, the red error card stayed visible. Now hidden on successful retry.
+- **Gemfile.lock parser docstring described wrong indentation** — comments stated "top-level: 6 spaces, subdependencies: 8+" but Bundler 2.x uses 4 and 6. Corrected.
+- **`versionToTuple` duplicated in `python/compatibility.ts`** — removed; now imports from `shared.ts`.
+
+### Added
+- **`scanreq.excludePaths` setting** — array of glob patterns to exclude paths from scanning. Supports exact prefixes (`src/functionalTest`), double-wildcard (`**/test/resources`), and simple wildcards (`*Test`). No defaults to avoid hiding real dependencies. Useful for monorepos with test fixtures or vendored third-party code.
+- **Platform badge on CVEs** — when a CVE only affects a specific OS (e.g. `golang.org/x/sys/windows`), a blue badge like `windows only` appears next to the severity. Detected from `affected[].package.name` sub-paths and summary text in OSV responses.
+- **Ecosystem-specific tool messages** — "Go CLI not found in PATH. Skipping transitive dependency graph analysis." instead of the generic "version detection tool not available". Specific messages for Go, Python (pip), and Node.js (node_modules).
 
 ### Changed
-- **`netlify.toml` reduced to publish-only** — the file declared redirects from `/api/*` to `/.netlify/functions` and listed legacy serverless functions that no longer exist on the live deployment (everything is on Cloudflare Workers now). If anyone re-enabled Netlify deploy by accident, the old functions would re-activate without the latest security fixes. Now contains only `[build] publish = "."` so a Netlify deploy serves only the static site and the obsolete functions cannot be reached.
+- **Summary card tooltips** — the three counters (up to date / outdated / with CVEs) now have tooltips explaining that outdated and vulnerable categories can overlap, preventing confusion when the numbers don't add up to the total.
+- **Improved insight text for mixed outdated+unpatched results** — when some packages can be updated and others have CVEs with no patch, the insight now says "N packages available to update. M require mitigation or replacement" instead of the generic "Review changelogs before updating".
+- **`create-checkout` Worker rate limited** — 5 checkouts per IP per hour, same KV pattern as other Workers. Currency validated against `{'usd', 'eur'}`.
+- **`validate-license` logs `activated_at` UPDATE errors** — previously discarded silently.
+- **`stripe-webhook` retries email once on transient failure** — 1.5s delay before retry; user can still recover via `scanreq.com/recover` if both attempts fail.
+- **`netlify.toml` reduced to publish-only** — removed legacy `/api/*` redirects and function config to prevent accidental re-activation of obsolete Netlify functions.
 
 ### Refactored
-- **`versionToTuple` in `python/compatibility.ts` was a duplicate** — the function had been left behind during the D2 refactor that moved version utilities to `shared.ts`. Removed and replaced with an import from `shared.ts`.
+- **`versionToTuple` deduplicated** — removed from `python/compatibility.ts`; imports from `shared.ts`.
 
 ## [2.6.2] - 2026-05-25
 

@@ -2,7 +2,7 @@
   "name": "scanreq",
   "displayName": "ScanReq",
   "description": "Real-time security scanner for Python, Node.js, Rust, Go, PHP, Ruby and Java (Maven & Gradle) dependencies. Detects outdated packages and CVE vulnerabilities directly in VS Code.",
-  "version": "2.6.3",
+  "version": "2.6.4",
   "publisher": "trustdev",
   "author": {
     "name": "TrustDev"
@@ -91,15 +91,23 @@
           "type": "boolean",
           "default": true,
           "description": "Mostrar notificación de progreso mientras se analizan las dependencias. / Show progress notification while dependencies are being analyzed."
+        },
+        "scanreq.excludePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Glob patterns for paths to exclude from dependency scanning. Examples: \"src/functionalTest\", \"**/test/resources\", \"**/fixtures\". No defaults — configure to match your project structure. / Patrones glob para excluir rutas del escaneo. Ejemplos: \"src/functionalTest\", \"**/test/resources\". Sin valores por defecto — configura según tu proyecto."
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "pnpm run compile && pnpm run lint",
+    "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
     "test:unit": "vitest run",
@@ -107,13 +115,13 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^22.19.17",
-    "@types/vscode": "^1.116.0",
+    "@types/node": "^22.19.19",
+    "@types/vscode": "^1.120.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.4"
   }
 }

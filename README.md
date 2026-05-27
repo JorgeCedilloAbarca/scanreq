@@ -176,6 +176,7 @@ One click copies a structured prompt to your clipboard with the full scan result
 |---|---|---|
 | `scanreq.autoOpenPanel` | `false` | Open the results panel automatically on startup or when a dependency file changes |
 | `scanreq.showNotification` | `true` | Show a notification while the scan is running |
+| `scanreq.excludePaths` | `[]` | Glob patterns for paths to exclude from scanning. Examples: `src/functionalTest`, `**/test/resources`, `**/fixtures` |
 
 ---
 
@@ -193,7 +194,7 @@ Pro license tokens are validated against scanreq.com. The token is stored in VS 
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-**v2.6.3** — Critical fix: Python conflict detection was 100% broken due to a regex bug (double backslash). Spring Boot Kotlin DSL plugin now detected in `build.gradle.kts`. Pre-release version comparisons fixed (RCs now correctly less than the stable). Node x-ranges (`16.x`) properly detected. Stripe checkout rate limited.
+**v2.6.4** — Critical fix: Python conflict detection was 100% broken (double backslash regex). Spring Boot Kotlin DSL now detected in `build.gradle.kts`. Pre-release comparisons fixed. Node x-ranges (`16.x`) properly handled. CalVer detection prevents absurd major jump badges. CRITICAL/HIGH CVEs now force Phase 3. Platform-specific CVE badges. Ecosystem-specific tool messages. New `scanreq.excludePaths` setting.
 
 ---
 

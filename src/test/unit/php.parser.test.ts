@@ -21,6 +21,26 @@ function writeTempComposer(
 	return jsonPath;
 }
 
+/**
+ * Crea un árbol de monorepo simulado con un composer.lock en la raíz
+ * y un sub-composer.json en una subcarpeta. Devuelve la ruta al sub-json.
+ */
+function writeMonorepoTree(
+	subPath: string,
+	subComposerJson: object,
+	rootLock: object
+): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanreq-php-mono-'));
+	// Lock en la raíz
+	fs.writeFileSync(path.join(dir, 'composer.lock'), JSON.stringify(rootLock));
+	// Sub-composer.json en subcarpeta
+	const subDir = path.join(dir, path.dirname(subPath));
+	fs.mkdirSync(subDir, { recursive: true });
+	const jsonPath = path.join(dir, subPath);
+	fs.writeFileSync(jsonPath, JSON.stringify(subComposerJson));
+	return jsonPath;
+}
+
 describe('parseComposerJson', () => {
 
 	// ─── Specifiers de versión ────────────────────────────────────────────────
@@ -109,27 +129,22 @@ describe('parseComposerJson', () => {
 		expect(result).toHaveLength(1);
 	});
 
-	// ─── composer.lock ────────────────────────────────────────────────────────
+	// ─── composer.lock mismo directorio ──────────────────────────────────────
 
 	it('usa versión de composer.lock cuando está disponible', () => {
 		const lock = {
-			packages: [
-				{ name: 'symfony/console', version: '6.4.2' }
-			],
+			packages: [{ name: 'symfony/console', version: '6.4.2' }],
 			'packages-dev': []
 		};
 		const file = writeTempComposer({ require: { 'symfony/console': '^6.0' } }, lock);
 		const result = parseComposerJson(file);
-		// La versión del lock sobreescribe la del specifier
 		expect(result[0]).toMatchObject({ version: '6.4.2', exactVersion: true });
 	});
 
 	it('usa versión de composer.lock para packages-dev', () => {
 		const lock = {
 			packages: [],
-			'packages-dev': [
-				{ name: 'phpunit/phpunit', version: '10.5.5' }
-			]
+			'packages-dev': [{ name: 'phpunit/phpunit', version: '10.5.5' }]
 		};
 		const file = writeTempComposer({ 'require-dev': { 'phpunit/phpunit': '^10.0' } }, lock);
 		const result = parseComposerJson(file);
@@ -144,6 +159,54 @@ describe('parseComposerJson', () => {
 		const file = writeTempComposer({ require: { 'guzzlehttp/guzzle': '^7.0' } }, lock);
 		const result = parseComposerJson(file);
 		expect(result[0].version).toBe('7.8.0');
+	});
+
+	// ─── composer.lock monorepo (subiendo directorios) ────────────────────────
+
+	it('sube un nivel para encontrar composer.lock del monorepo (patrón laravel/framework)', () => {
+		const rootLock = {
+			packages: [
+				{ name: 'guzzlehttp/guzzle', version: '7.8.2' },
+				{ name: 'monolog/monolog', version: '3.5.0' },
+			],
+			'packages-dev': []
+		};
+		const file = writeMonorepoTree(
+			'src/Illuminate/Http/composer.json',
+			{ require: { 'guzzlehttp/guzzle': '~7.8.2', 'monolog/monolog': '~3.0' } },
+			rootLock
+		);
+		const result = parseComposerJson(file);
+		expect(result.find(p => p.name === 'guzzlehttp/guzzle')).toMatchObject({
+			version: '7.8.2',
+			exactVersion: true,
+		});
+		expect(result.find(p => p.name === 'monolog/monolog')).toMatchObject({
+			version: '3.5.0',
+			exactVersion: true,
+		});
+	});
+
+	it('sube dos niveles para encontrar composer.lock', () => {
+		const rootLock = {
+			packages: [{ name: 'symfony/console', version: '7.4.1' }],
+			'packages-dev': []
+		};
+		const file = writeMonorepoTree(
+			'src/deep/sub/composer.json',
+			{ require: { 'symfony/console': '~7.4.0' } },
+			rootLock
+		);
+		const result = parseComposerJson(file);
+		expect(result[0]).toMatchObject({ version: '7.4.1', exactVersion: true });
+	});
+
+	it('devuelve mapa vacío si no hay composer.lock en toda la jerarquía', () => {
+		// Sin lock en ningún nivel → usa el specifier del composer.json
+		const file = writeTempComposer({ require: { 'symfony/console': '~7.4.0' } });
+		const result = parseComposerJson(file);
+		expect(result[0].exactVersion).toBe(false);
+		expect(result[0].version).toBe('7.4.0');
 	});
 
 	// ─── Casos borde ─────────────────────────────────────────────────────────

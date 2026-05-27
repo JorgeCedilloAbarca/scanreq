@@ -325,11 +325,24 @@ BUNDLED WITH
 		expect(result.map(p => p.name)).toContain('rails');
 	});
 
-	it('ignora gem con platforms: %i[ windows jruby ] (patrón tzinfo-data en rails)', () => {
+	it('ignora gem con platforms: %i[ windows jruby ] (sintaxis %i)', () => {
 		const file = writeTempGemfile(`gem "rails", "~> 7.1"\ngem "tzinfo-data", platforms: %i[ windows jruby ]\n`);
 		const result = parseGemfile(file);
 		expect(result.map(p => p.name)).not.toContain('tzinfo-data');
 		expect(result.map(p => p.name)).toContain('rails');
+	});
+
+	it('ignora gem con platforms: [:windows, :jruby] (sintaxis array Ruby — patrón real en rails/rails)', () => {
+		const file = writeTempGemfile(`gem "rails", "~> 7.1"\ngem "tzinfo-data", platforms: [:windows, :jruby]\n`);
+		const result = parseGemfile(file);
+		expect(result.map(p => p.name)).not.toContain('tzinfo-data');
+		expect(result.map(p => p.name)).toContain('rails');
+	});
+
+	it('ignora gem con platforms: [:windows] (array de un elemento)', () => {
+		const file = writeTempGemfile(`gem "wdm", ">= 0.1.0", platforms: [:windows]\n`);
+		const result = parseGemfile(file);
+		expect(result).toHaveLength(0);
 	});
 
 	it('ignora gem con platforms: :jruby', () => {
@@ -338,22 +351,19 @@ BUNDLED WITH
 		expect(result).toHaveLength(0);
 	});
 
-	it('ignora gem con platforms: mswin, mingw, x64_mingw', () => {
+	it('ignora gem con platforms: mswin, mingw, x64_mingw (%i)', () => {
 		const file = writeTempGemfile(`gem "rails", "~> 7.1"\ngem "wdm", "~> 0.1", platforms: %i[ mswin mingw x64_mingw ]\n`);
 		const result = parseGemfile(file);
 		expect(result.map(p => p.name)).not.toContain('wdm');
 	});
 
 	it('NO ignora gem con platforms: que incluye plataformas no-específicas (ruby, mri)', () => {
-		// Si la plataforma incluye :ruby o :mri (la implementación estándar), la gem es relevante
 		const file = writeTempGemfile(`gem "some-gem", "1.0.0", platforms: %i[ ruby windows ]\n`);
 		const result = parseGemfile(file);
-		// ruby es una plataforma válida (no en PLATFORM_SPECIFIC), por eso NO se filtra
 		expect(result.map(p => p.name)).toContain('some-gem');
 	});
 
 	it('NO ignora gem con platforms: si está en el Gemfile.lock (usuario en esa plataforma)', () => {
-		// Simula que el usuario está en Windows: wdm aparece en el lock
 		const lock = `GEM
   remote: https://rubygems.org/
   specs:
@@ -368,11 +378,6 @@ BUNDLED WITH
 			lock
 		);
 		const result = parseGemfile(file);
-		// wdm se filtra en parseGemLine, pero ya está en lockVersions
-		// NOTA: con la implementación actual, la gem se filtra antes de lookupear el lock.
-		// Este test documenta el comportamiento actual: la gem se filtra siempre si es platform-specific.
-		// En Windows el usuario verá wdm en el lock y ScanReq la mostrará a través de otro mecanismo.
-		// Si se quiere cambiar, hay que pasar lockVersions a parseGemLine.
 		expect(result.map(p => p.name)).not.toContain('wdm');
 	});
 });

@@ -175,13 +175,18 @@ function parseGemLine(line: string): { name: string; version: string; exactVersi
 	// Las filtramos aquí. Si el usuario está en esa plataforma, el lock sí las
 	// incluirá y lockVersions.get(name) las cubrirá — este null nunca se alcanza.
 	if (line.includes('platforms:')) {
-		const platformMatch = line.match(/platforms:\s*(%i\[([^\]]+)\]|:(\w+))/);
+		const platformMatch = line.match(/platforms:\s*(?:%i\[([^\]]+)\]|\[([^\]]+)\]|:(\w+))/);
 		if (platformMatch) {
-			const rawPlatforms = platformMatch[2]
-				? platformMatch[2].split(/\s+/).map(s => s.trim().toLowerCase()).filter(Boolean)
-				: [platformMatch[3].toLowerCase()];
+			// Grupo 1: %i[windows jruby]
+			// Grupo 2: [:windows, :jruby]
+			// Grupo 3: :windows (símbolo único)
+			const raw = platformMatch[1] ?? platformMatch[2] ?? platformMatch[3] ?? '';
+			const rawPlatforms = raw
+				.split(/[\s,]+/)
+				.map(s => s.trim().replace(/^:/, '').toLowerCase())
+				.filter(Boolean);
 			const PLATFORM_SPECIFIC = new Set(['windows', 'jruby', 'mswin', 'mingw', 'x64_mingw']);
-			if (rawPlatforms.every(p => PLATFORM_SPECIFIC.has(p))) { return null; }
+			if (rawPlatforms.length > 0 && rawPlatforms.every(p => PLATFORM_SPECIFIC.has(p))) { return null; }
 		}
 	}
 

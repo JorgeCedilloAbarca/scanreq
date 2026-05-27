@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 
 export interface ParsedPackage {
 	name: string;       // e.g. "symfony/console"
@@ -24,8 +25,9 @@ export interface ParsedPackage {
  *   - extensiones "ext-*"
  *   - "self.version", "dev-*"
  *
- * Si existe composer.lock en el mismo directorio, se usa para obtener
- * la versión instalada real (más preciso que el specifier).
+ * Si existe composer.lock en el mismo directorio o en un directorio padre
+ * (patrón monorepo como laravel/framework), se usa para obtener la versión
+ * instalada real (más preciso que el specifier).
  */
 export function parseComposerJson(filePath: string): ParsedPackage[] {
 	let raw: string;
@@ -87,37 +89,63 @@ export function parseComposerJson(filePath: string): ParsedPackage[] {
 }
 
 /**
- * Lee composer.lock y devuelve un mapa name → version instalada.
+ * Busca composer.lock subiendo directorios desde el composer.json dado.
+ *
+ * En monorepos PHP, los sub-paquetes no tienen su propio lock - el lock
+ * está en la raíz del workspace. Esta función sube hasta MAX_DEPTH
+ * niveles para encontrarlo, igual que readCargoLock para Rust.
+ *
+ * Si el lock está en el mismo directorio se usa directamente (caso
+ * habitual en proyectos normales). Si no existe ningún lock en la
+ * jerarquía, devuelve mapa vacío y el comportamiento es idéntico al anterior.
+ *
  * Packagist normaliza los nombres a minúsculas; hacemos lo mismo.
  */
 function readLockFile(composerJsonPath: string): Map<string, string> {
-	const lockPath = composerJsonPath.replace(/composer\.json$/, 'composer.lock');
+	const MAX_DEPTH = 5;
 	const map = new Map<string, string>();
 
-	let raw: string;
-	try {
-		raw = fs.readFileSync(lockPath, 'utf8');
-	} catch {
-		return map;
-	}
+	let dir = path.dirname(path.resolve(composerJsonPath));
 
-	let lock: any;
-	try {
-		lock = JSON.parse(raw);
-	} catch {
-		return map;
-	}
+	for (let i = 0; i < MAX_DEPTH; i++) {
+		const lockPath = path.join(dir, 'composer.lock');
 
-	const allPackages = [
-		...(Array.isArray(lock.packages)     ? lock.packages     : []),
-		...(Array.isArray(lock['packages-dev']) ? lock['packages-dev'] : []),
-	];
+		if (fs.existsSync(lockPath)) {
+			let raw: string;
+			try {
+				raw = fs.readFileSync(lockPath, 'utf8');
+			} catch {
+				return map;
+			}
 
-	for (const pkg of allPackages) {
-		if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string') { continue; }
-		const name    = pkg.name.toLowerCase();
-		const version = normalizeVersion(pkg.version);
-		map.set(name, version);
+			let lock: any;
+			try {
+				lock = JSON.parse(raw);
+			} catch {
+				return map;
+			}
+
+			const allPackages = [
+				...(Array.isArray(lock.packages)        ? lock.packages        : []),
+				...(Array.isArray(lock['packages-dev']) ? lock['packages-dev'] : []),
+			];
+
+			for (const pkg of allPackages) {
+				if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string') { continue; }
+				const name    = pkg.name.toLowerCase();
+				const version = normalizeVersion(pkg.version);
+				if (!map.has(name)) {
+					map.set(name, version);
+				}
+			}
+
+			return map;
+		}
+
+		// Subir un nivel
+		const parent = path.dirname(dir);
+		if (parent === dir) { break; } // raíz del filesystem
+		dir = parent;
 	}
 
 	return map;

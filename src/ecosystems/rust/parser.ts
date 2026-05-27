@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 
 export interface ParsedPackage {
 	name: string;
@@ -121,4 +122,84 @@ export function parseCargoToml(filePath: string): ParsedPackage[] {
 	}
 
 	return Array.from(dedupedMap.values());
+}
+
+/**
+ * Busca Cargo.lock subiendo directorios desde el Cargo.toml dado.
+ *
+ * En workspaces de Rust, el Cargo.lock está siempre en la raíz del workspace,
+ * no en los sub-crates. Este helper sube hasta MAX_DEPTH directorios para
+ * encontrarlo, lo que cubre workspaces con hasta 5 niveles de anidamiento.
+ *
+ * Formato de Cargo.lock (TOML con bloques [[package]]):
+ *   [[package]]
+ *   name = "async-channel"
+ *   version = "2.1.1"
+ *   source = "registry+..."
+ *
+ * Solo se toman paquetes con `source` que contenga "registry" — los
+ * paquetes locales (path dependencies) no tienen source y no nos interesan
+ * porque no aparecen en crates.io.
+ *
+ * Cuando hay múltiples entradas del mismo nombre (versiones distintas de un
+ * crate en el grafo de dependencias), se toma la primera — que en Cargo.lock
+ * es la que satisface el specifier del Cargo.toml que estamos analizando.
+ *
+ * @param cargoTomlPath  Ruta absoluta o relativa al Cargo.toml
+ * @returns Mapa name → version con versiones exactas resueltas, o Map vacío si no hay lock
+ */
+export function readCargoLock(cargoTomlPath: string): Map<string, string> {
+	const MAX_DEPTH = 5;
+	const map = new Map<string, string>();
+
+	let dir = path.dirname(path.resolve(cargoTomlPath));
+
+	for (let i = 0; i < MAX_DEPTH; i++) {
+		const lockPath = path.join(dir, 'Cargo.lock');
+
+		if (fs.existsSync(lockPath)) {
+			let content: string;
+			try {
+				content = fs.readFileSync(lockPath, 'utf8');
+			} catch {
+				return map;
+			}
+
+			// Parsear bloques [[package]]
+			// Dividimos por líneas vacías consecutivas para aislar cada bloque,
+			// luego buscamos los que empiezan con [[package]]
+			const blocks = content.split(/\n(?=\[\[package\]\])/);
+
+			for (const block of blocks) {
+				if (!block.trimStart().startsWith('[[package]]')) { continue; }
+
+				const nameMatch    = block.match(/^name\s*=\s*"([^"]+)"/m);
+				const versionMatch = block.match(/^version\s*=\s*"([^"]+)"/m);
+				const sourceMatch  = block.match(/^source\s*=\s*"([^"]+)"/m);
+
+				if (!nameMatch || !versionMatch) { continue; }
+
+				// Ignorar dependencias locales (path) — no tienen source o su source es "path+..."
+				if (sourceMatch && sourceMatch[1].startsWith('path+')) { continue; }
+				if (!sourceMatch) { continue; }
+
+				const name    = nameMatch[1];
+				const version = versionMatch[1];
+
+				// Primera aparición gana — es la versión directa del workspace
+				if (!map.has(name)) {
+					map.set(name, version);
+				}
+			}
+
+			return map;
+		}
+
+		// Subir un nivel
+		const parent = path.dirname(dir);
+		if (parent === dir) { break; } // llegamos a la raíz del filesystem
+		dir = parent;
+	}
+
+	return map;
 }

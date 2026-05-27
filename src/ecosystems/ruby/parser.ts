@@ -15,28 +15,68 @@ export interface ParsedPackage {
  * 1. Si existe Gemfile.lock en el mismo directorio → usarlo como fuente de verdad
  *    para las versiones instaladas (es el más preciso, siempre tiene versiones exactas).
  * 2. Parsear Gemfile para obtener la lista de gems y sus specifiers.
+ *    Si el Gemfile contiene `eval_gemfile 'ruta'`, parsear ese archivo también
+ *    (recursivamente, con protección anti-bucle).
  * 3. Combinar: nombre y sección del Gemfile, versión del Gemfile.lock si está disponible.
  *
  * Gemfile.lock es el archivo más crítico para Ruby:
  * - Siempre contiene versiones exactas resueltas por Bundler
  * - Permite CVE detection precisa
  * - Si no existe, caemos de vuelta al specifier del Gemfile
+ * - Cuando se usa eval_gemfile, Bundler genera un único Gemfile.lock
+ *   en la raíz que cubre todas las gems de todos los sub-archivos.
+ *   Por eso pasamos siempre el lockVersions del archivo raíz.
  */
 export function parseGemfile(filePath: string): ParsedPackage[] {
-	// Leer Gemfile.lock primero
+	// Leer Gemfile.lock del directorio raíz (donde vive el Gemfile principal)
 	const lockVersions = readGemfileLock(filePath);
 
-	// Parsear Gemfile
+	// Parsear recursivamente con set de rutas visitadas para anti-bucle
+	const visited = new Set<string>();
+	const raw = parseGemfileContent(filePath, lockVersions, visited);
+
+	// Deduplicar por nombre — primera aparición gana (el archivo raíz tiene prioridad)
+	const seen = new Set<string>();
+	const results: ParsedPackage[] = [];
+	for (const pkg of raw) {
+		if (!seen.has(pkg.name)) {
+			seen.add(pkg.name);
+			results.push(pkg);
+		}
+	}
+
+	return results;
+}
+
+/**
+ * Parsea el contenido de un Gemfile (o sub-archivo eval_gemfile).
+ * Devuelve los paquetes sin deduplicar — la deduplicación la hace parseGemfile.
+ *
+ * @param filePath   Ruta al archivo a parsear
+ * @param lockVersions  Mapa name→version del Gemfile.lock raíz (se reutiliza en todos los niveles)
+ * @param visited    Set de rutas ya procesadas (anti-bucle circular)
+ */
+function parseGemfileContent(
+	filePath: string,
+	lockVersions: Map<string, string>,
+	visited: Set<string>
+): ParsedPackage[] {
+	const resolvedPath = path.resolve(filePath);
+
+	// Protección anti-bucle
+	if (visited.has(resolvedPath)) { return []; }
+	visited.add(resolvedPath);
+
 	let content: string;
 	try {
-		content = fs.readFileSync(filePath, 'utf8');
+		content = fs.readFileSync(resolvedPath, 'utf8');
 	} catch {
 		return [];
 	}
 
-	const seen = new Set<string>();
 	const results: ParsedPackage[] = [];
 	const lines = content.split('\n');
+	const dir = path.dirname(resolvedPath);
 
 	// Rastrear el grupo activo
 	let currentGroup = 'gem';
@@ -48,10 +88,18 @@ export function parseGemfile(filePath: string): ParsedPackage[] {
 		// Ignorar comentarios y líneas vacías
 		if (!line || line.startsWith('#')) { continue; }
 
+		// Detectar eval_gemfile 'ruta' o eval_gemfile "ruta"
+		const evalMatch = line.match(/^eval_gemfile\s+['"]([^'"]+)['"]/);
+		if (evalMatch) {
+			const childPath = path.resolve(dir, evalMatch[1]);
+			const childPackages = parseGemfileContent(childPath, lockVersions, visited);
+			results.push(...childPackages);
+			continue;
+		}
+
 		// Detectar inicio de bloque group :test, :development do
 		const groupMatch = line.match(/^group\s+(.+?)\s+do\b/);
 		if (groupMatch) {
-			// Extraer nombres de grupos: ":test, :development" → "test,development"
 			const groups = groupMatch[1]
 				.split(',')
 				.map(g => g.trim().replace(/^:/, '').replace(/['"]/g, ''))
@@ -77,9 +125,6 @@ export function parseGemfile(filePath: string): ParsedPackage[] {
 		if (!gemMatch) { continue; }
 
 		const { name, version, exactVersion } = gemMatch;
-
-		if (seen.has(name)) { continue; }
-		seen.add(name);
 
 		// Si tenemos Gemfile.lock, sobreescribir versión con la instalada real
 		const lockedVersion = lockVersions.get(name);
@@ -212,16 +257,7 @@ function readGemfileLock(gemfilePath: string): Map<string, string> {
 
 		if (!inSpecs) { continue; }
 
-		// Fix M1 + B1: Top-level gems en Gemfile.lock tienen EXACTAMENTE 4 espacios
-		// de indentación. Las subdependencias usan 6 espacios (no "8+" como decía
-		// el comentario anterior). La regex original /^ {4,6}/ matcheaba ambas y
-		// funcionaba "por suerte" porque el primer match se quedaba (las top-level
-		// aparecen antes que sus subdeps en Bundler), pero era frágil: si una
-		// subdep se procesaba antes que la top-level homónima, se guardaba la
-		// versión con prefijo "= " en lugar de la versión limpia.
-		//
-		// Solución: anclar exactamente 4 espacios con lookahead negativo (?! ) para
-		// excluir 5+. Las subdeps (6 espacios) ahora se descartan correctamente.
+		// Top-level gems: exactamente 4 espacios, no 5+
 		const gemLineMatch = line.match(/^ {4}(?! )([a-zA-Z0-9_\-\.]+)\s+\(([^)]+)\)/);
 		if (!gemLineMatch) { continue; }
 

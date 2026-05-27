@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 
 export interface ParsedPackage {
 	name: string;
@@ -33,6 +34,13 @@ export function readFileWithEncoding(filePath: string): string {
 	return buffer.toString('utf8');
 }
 
+/**
+ * Parsea el contenido de un requirements.txt como string puro.
+ * Solo procesa líneas de paquetes — las líneas -r/-c se ignoran aquí
+ * (son manejadas por parseRequirementsFile que conoce el path).
+ *
+ * Esta función permanece pura (string → ParsedPackage[]) para facilitar tests.
+ */
 export function parseRequirements(content: string): ParsedPackage[] {
 	const specifierRegex = /^([A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?(\[.*?\])?)\s*((?:[><!~]?=|[><]|~=).+)?$/;
 
@@ -55,10 +63,6 @@ export function parseRequirements(content: string): ParsedPackage[] {
 
 			const isExact = fullSpec.startsWith('==') && !fullSpec.includes(',');
 
-			// Fix F4: para specifiers compuestos como ">=1.0,<2.0", extraer solo
-			// el primer número de versión. Antes se hacía replace del primer operador
-			// y quedaba "1.0,<2.0" como versión — basura que se mostraba en la UI.
-			// Ahora: extraer el primer número de versión con regex.
 			if (isExact) {
 				const versionNumber = fullSpec.replace(/^==/, '').trim();
 				return { name, version: versionNumber, exactVersion: true };
@@ -70,4 +74,90 @@ export function parseRequirements(content: string): ParsedPackage[] {
 
 			return { name, version: versionNumber, exactVersion: false };
 		});
+}
+
+/**
+ * Lee un requirements.txt desde disco y resuelve recursivamente las directivas -r.
+ *
+ * Soporta:
+ *   -r ruta/relativa.txt
+ *   -r ruta/relativa.txt  # comentario inline
+ *   --requirement ruta/relativa.txt  (forma larga)
+ *
+ * Las directivas -c (constraints) se ignoran — solo afectan a pip resolver,
+ * no declaran paquetes que ScanReq deba analizar.
+ *
+ * El parámetro `visited` es el set de rutas ya procesadas (normalizadas con
+ * path.resolve) que evita bucles circulares: si requirements/base.txt incluye
+ * -r ../requirements.txt y este a su vez incluye -r requirements/base.txt,
+ * la segunda visita se descarta silenciosamente.
+ */
+export function parseRequirementsFile(
+	filePath: string,
+	visited: Set<string> = new Set()
+): ParsedPackage[] {
+	const resolvedPath = path.resolve(filePath);
+
+	// Protección anti-bucle
+	if (visited.has(resolvedPath)) {
+		return [];
+	}
+	visited.add(resolvedPath);
+
+	let content: string;
+	try {
+		content = readFileWithEncoding(resolvedPath);
+	} catch {
+		// Archivo hijo no encontrado — lo ignoramos silenciosamente.
+		// El usuario puede tener un -r apuntando a un archivo opcional
+		// o generado que no existe en el repo.
+		return [];
+	}
+
+	const results: ParsedPackage[] = [];
+	const dir = path.dirname(resolvedPath);
+
+	for (const rawLine of content.split('\n')) {
+		const line = rawLine.trim();
+
+		// Ignorar vacías y comentarios puros
+		if (!line || line.startsWith('#')) { continue; }
+
+		// Detectar -r / --requirement ANTES del filtro genérico de --
+		// (--requirement empieza con -- pero es una referencia válida a otro archivo)
+		const refMatch = line.match(/^(?:-r|--requirement)\s+(\S+)/);
+		if (refMatch) {
+			// Resolver la ruta relativa al directorio del archivo actual
+			const childPath = path.resolve(dir, refMatch[1]);
+			const childPackages = parseRequirementsFile(childPath, visited);
+			results.push(...childPackages);
+			continue;
+		}
+
+		// Ignorar --no-binary, --index-url y demás opciones de pip con --
+		if (line.startsWith('--')) { continue; }
+
+		// Ignorar -c (constraints) y cualquier otro flag de pip con -
+		if (line.startsWith('-')) { continue; }
+
+		// Línea de paquete — parsear con la función pura
+		const withoutComment = line.split('#')[0].trim();
+		if (!withoutComment) { continue; }
+
+		const parsed = parseRequirements(withoutComment);
+		results.push(...parsed);
+	}
+
+	// Deduplicar por nombre — primera aparición gana (el archivo raíz tiene prioridad)
+	const seen = new Set<string>();
+	const deduped: ParsedPackage[] = [];
+	for (const pkg of results) {
+		const key = pkg.name.toLowerCase().replace(/\[.*?\]$/, '');
+		if (!seen.has(key)) {
+			seen.add(key);
+			deduped.push(pkg);
+		}
+	}
+
+	return deduped;
 }

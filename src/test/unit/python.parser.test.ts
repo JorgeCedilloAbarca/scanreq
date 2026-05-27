@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { parseRequirements } from '../../ecosystems/python/parser';
+import { parseRequirements, parseRequirementsFile } from '../../ecosystems/python/parser';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Crea un directorio temporal con múltiples archivos de requirements.
+ * Devuelve la ruta al archivo raíz (requirements.txt).
+ */
+function writeRequirementsTree(files: Record<string, string>): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanreq-python-test-'));
+	for (const [relPath, content] of Object.entries(files)) {
+		const abs = path.join(dir, relPath);
+		fs.mkdirSync(path.dirname(abs), { recursive: true });
+		fs.writeFileSync(abs, content);
+	}
+	return path.join(dir, 'requirements.txt');
+}
+
+// ─── parseRequirements (función pura, sin cambios) ───────────────────────────
 
 describe('parseRequirements', () => {
 
@@ -76,5 +97,127 @@ describe('parseRequirements', () => {
 	it('no marca == con coma como exacta', () => {
 		const result = parseRequirements('package==1.0.0,<2.0.0');
 		expect(result[0].exactVersion).toBe(false);
+	});
+});
+
+// ─── parseRequirementsFile — archivo simple sin -r ───────────────────────────
+
+describe('parseRequirementsFile — archivo simple', () => {
+
+	it('lee un archivo sin directivas -r', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt': 'requests==2.31.0\nflask==3.0.3\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(2);
+		expect(result.map(p => p.name)).toEqual(['requests', 'flask']);
+	});
+
+	it('devuelve vacío si el archivo no existe', () => {
+		const result = parseRequirementsFile('/ruta/inexistente/requirements.txt');
+		expect(result).toHaveLength(0);
+	});
+
+	it('ignora opciones pip como --no-binary', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt': '--no-binary caio\nrequests==2.31.0\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe('requests');
+	});
+});
+
+// ─── parseRequirementsFile — directiva -r ────────────────────────────────────
+
+describe('parseRequirementsFile — directiva -r', () => {
+
+	it('resuelve -r a un archivo hijo y consolida los paquetes (patrón apt-mirror2)', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt':         '-r requirements/prod.txt\n-r requirements/dev.txt\n',
+			'requirements/prod.txt':    'gunicorn==21.2.0\npsycopg2==2.9.9\n',
+			'requirements/dev.txt':     'pytest==8.1.0\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(3);
+		expect(result.map(p => p.name)).toEqual(['gunicorn', 'psycopg2', 'pytest']);
+	});
+
+	it('resuelve --requirement (forma larga)', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt':      '--requirement requirements/prod.txt\n',
+			'requirements/prod.txt': 'celery==5.3.6\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe('celery');
+	});
+
+	it('combina paquetes del raíz con paquetes del hijo', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt':      'flask==3.0.3\n-r requirements/prod.txt\n',
+			'requirements/prod.txt': 'gunicorn==21.2.0\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(2);
+		expect(result.map(p => p.name)).toEqual(['flask', 'gunicorn']);
+	});
+
+	it('-r anidado (-r a→b→c) resuelve recursivamente', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt':      '-r requirements/base.txt\n',
+			'requirements/base.txt': '-r core.txt\nflask==3.0.3\n',
+			'requirements/core.txt': 'sqlalchemy==2.0.31\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(2);
+		expect(result.map(p => p.name)).toEqual(['sqlalchemy', 'flask']);
+	});
+
+	it('ignora silenciosamente un archivo hijo que no existe', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt': '-r requirements/opcional.txt\nrequests==2.31.0\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe('requests');
+	});
+
+	it('deduplica paquetes entre archivos — primera aparición gana', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt':      'requests==2.31.0\n-r requirements/prod.txt\n',
+			'requirements/prod.txt': 'requests==2.28.0\ngunicorn==21.2.0\n',
+		});
+		const result = parseRequirementsFile(root);
+		expect(result).toHaveLength(2);
+		// requests del raíz gana (2.31.0), no el del hijo
+		expect(result.find(p => p.name === 'requests')?.version).toBe('2.31.0');
+		expect(result.find(p => p.name === 'gunicorn')).toBeDefined();
+	});
+
+	it('protección anti-bucle circular: no entra en loop infinito', () => {
+		// a.txt → b.txt → a.txt — el ciclo debe cortarse silenciosamente
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanreq-python-loop-'));
+		const aPath = path.join(dir, 'a.txt');
+		const bPath = path.join(dir, 'b.txt');
+		fs.writeFileSync(aPath, `-r b.txt\nflask==3.0.3\n`);
+		fs.writeFileSync(bPath, `-r a.txt\nrequests==2.31.0\n`);
+
+		const result = parseRequirementsFile(aPath);
+		// flask del raíz (a.txt) + requests de b.txt — sin duplicados, sin crash
+		expect(result.map(p => p.name)).toContain('flask');
+		expect(result.map(p => p.name)).toContain('requests');
+		// No debe haber bucle infinito — la función debe completar
+	});
+
+	it('ignora líneas -c (constraints) sin incluir sus paquetes', () => {
+		const root = writeRequirementsTree({
+			'requirements.txt':         '-c constraints.txt\nrequests==2.31.0\n',
+			'constraints.txt':          'urllib3==2.2.1\n',
+		});
+		const result = parseRequirementsFile(root);
+		// -c no debe incluir urllib3 — solo requests
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe('requests');
 	});
 });

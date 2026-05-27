@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 /**
  * Escribe un Gemfile temporal y opcionalmente un Gemfile.lock en el mismo directorio.
  * Devuelve la ruta al Gemfile.
@@ -18,9 +20,23 @@ function writeTempGemfile(gemfileContent: string, lockContent?: string): string 
 	return gemfilePath;
 }
 
-describe('parseGemfile', () => {
+/**
+ * Crea un árbol de archivos en un directorio temporal.
+ * Devuelve la ruta al Gemfile raíz.
+ */
+function writeGemfileTree(files: Record<string, string>): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanreq-ruby-tree-'));
+	for (const [relPath, content] of Object.entries(files)) {
+		const abs = path.join(dir, relPath);
+		fs.mkdirSync(path.dirname(abs), { recursive: true });
+		fs.writeFileSync(abs, content);
+	}
+	return path.join(dir, 'Gemfile');
+}
 
-	// ─── Specifiers de versión ────────────────────────────────────────────────
+// ─── Specifiers de versión ────────────────────────────────────────────────────
+
+describe('parseGemfile', () => {
 
 	it('parsea versión exacta con =', () => {
 		const file = writeTempGemfile(`gem "rails", "= 7.1.2"`);
@@ -162,7 +178,6 @@ BUNDLED WITH
 	});
 
 	it('Gemfile.lock con versión de plataforma strip el sufijo', () => {
-		// e.g. "nokogiri (1.16.0-x86_64-linux)" → "1.16.0"
 		const lock = `GEM
   remote: https://rubygems.org/
   specs:
@@ -177,14 +192,13 @@ BUNDLED WITH
 	});
 
 	it('sin Gemfile.lock usa el specifier del Gemfile', () => {
-		// No se pasa lock → solo Gemfile
 		const file = writeTempGemfile(`gem "rails", "~> 7.1.0"`);
 		const result = parseGemfile(file);
 		expect(result[0].version).toBe('7.1.0');
 		expect(result[0].exactVersion).toBe(false);
 	});
 
-	// ─── Nombres con guiones y underscores ───────────────────────────────────
+	// ─── Nombres con guiones y underscores ────────────────────────────────────
 
 	it('parsea gems con guiones en el nombre', () => {
 		const file = writeTempGemfile(`gem "factory_bot_rails", "~> 6.4"\ngem "devise-i18n", "1.12.0"`);
@@ -193,7 +207,7 @@ BUNDLED WITH
 		expect(result[1].name).toBe('devise-i18n');
 	});
 
-	// ─── Archivo vacío / inexistente ─────────────────────────────────────────
+	// ─── Archivo vacío / inexistente ──────────────────────────────────────────
 
 	it('devuelve vacío si el archivo Gemfile no existe', () => {
 		const result = parseGemfile('/ruta/que/no/existe/Gemfile');
@@ -210,5 +224,95 @@ gem "bootsnap", require: false
 		const result = parseGemfile(file);
 		expect(result).toHaveLength(4);
 		expect(result.map(p => p.name)).toEqual(['rails', 'pg', 'puma', 'bootsnap']);
+	});
+
+	// ─── eval_gemfile ──────────────────────────────────────────────────────────
+
+	it('eval_gemfile — carga gems del archivo hijo', () => {
+		const root = writeGemfileTree({
+			'Gemfile':          `gem "rails", "~> 7.1"\neval_gemfile 'gemfiles/common.rb'\n`,
+			'gemfiles/common.rb': `gem "sidekiq", "~> 7.0"\ngem "redis", "~> 5.0"\n`,
+		});
+		const result = parseGemfile(root);
+		expect(result.map(p => p.name)).toEqual(['rails', 'sidekiq', 'redis']);
+	});
+
+	it('eval_gemfile — usa comillas dobles', () => {
+		const root = writeGemfileTree({
+			'Gemfile':          `eval_gemfile "gemfiles/common.rb"\n`,
+			'gemfiles/common.rb': `gem "sidekiq", "7.2.0"\n`,
+		});
+		const result = parseGemfile(root);
+		expect(result[0]).toMatchObject({ name: 'sidekiq', version: '7.2.0', exactVersion: true });
+	});
+
+	it('eval_gemfile — las versiones del Gemfile.lock raíz se aplican a gems de sub-archivos', () => {
+		const lock = `GEM
+  remote: https://rubygems.org/
+  specs:
+    sidekiq (7.2.4)
+    redis (5.0.8)
+
+BUNDLED WITH
+   2.5.4
+`;
+		const root = writeGemfileTree({
+			'Gemfile':            `eval_gemfile 'gemfiles/common.rb'\n`,
+			'gemfiles/common.rb': `gem "sidekiq", "~> 7.0"\ngem "redis", "~> 5.0"\n`,
+			'Gemfile.lock':       lock,
+		});
+		const result = parseGemfile(root);
+		expect(result.find(p => p.name === 'sidekiq')?.version).toBe('7.2.4');
+		expect(result.find(p => p.name === 'sidekiq')?.exactVersion).toBe(true);
+		expect(result.find(p => p.name === 'redis')?.version).toBe('5.0.8');
+	});
+
+	it('eval_gemfile anidado — sub-archivo llama a otro sub-archivo', () => {
+		const root = writeGemfileTree({
+			'Gemfile':              `eval_gemfile 'gemfiles/base.rb'\n`,
+			'gemfiles/base.rb':     `gem "rails", "~> 7.1"\neval_gemfile 'core.rb'\n`,
+			'gemfiles/core.rb':     `gem "pg", "~> 1.5"\n`,
+		});
+		const result = parseGemfile(root);
+		expect(result.map(p => p.name)).toEqual(['rails', 'pg']);
+	});
+
+	it('eval_gemfile — archivo hijo inexistente se ignora silenciosamente', () => {
+		const root = writeGemfileTree({
+			'Gemfile': `gem "rails", "~> 7.1"\neval_gemfile 'gemfiles/optional.rb'\n`,
+		});
+		const result = parseGemfile(root);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe('rails');
+	});
+
+	it('eval_gemfile — deduplicación: gem declarada en raíz y en sub-archivo usa la del raíz', () => {
+		const root = writeGemfileTree({
+			'Gemfile':            `gem "rails", "7.1.0"\neval_gemfile 'gemfiles/common.rb'\n`,
+			'gemfiles/common.rb': `gem "rails", "~> 7.0"\ngem "sidekiq", "7.2.0"\n`,
+		});
+		const result = parseGemfile(root);
+		// rails del raíz gana (7.1.0 exacto), no el del hijo
+		expect(result.find(p => p.name === 'rails')?.version).toBe('7.1.0');
+		expect(result.find(p => p.name === 'rails')?.exactVersion).toBe(true);
+		expect(result.find(p => p.name === 'sidekiq')).toBeDefined();
+		expect(result).toHaveLength(2);
+	});
+
+	it('eval_gemfile — protección anti-bucle circular', () => {
+		// Gemfile → a.rb → Gemfile (ciclo)
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanreq-ruby-loop-'));
+		const gemfilePath = path.join(dir, 'Gemfile');
+		const aPath = path.join(dir, 'a.rb');
+		fs.writeFileSync(gemfilePath, `eval_gemfile 'a.rb'\ngem "rails", "7.1.0"\n`);
+		fs.writeFileSync(aPath, `eval_gemfile 'Gemfile'\ngem "sidekiq", "7.2.0"\n`);
+
+		// No debe entrar en loop — debe completar y devolver gems sin duplicados
+		const result = parseGemfile(gemfilePath);
+		expect(result.map(p => p.name)).toContain('rails');
+		expect(result.map(p => p.name)).toContain('sidekiq');
+		// Sin duplicados
+		const names = result.map(p => p.name);
+		expect(names.length).toBe(new Set(names).size);
 	});
 });

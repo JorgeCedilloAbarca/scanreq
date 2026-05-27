@@ -1,5 +1,5 @@
 import { EcosystemAdapter, ScanResult } from '../types';
-import { readFileWithEncoding, parseRequirements } from './parser';
+import { parseRequirementsFile } from './parser';
 import { checkPyPI } from './registry';
 import { checkPipAvailability, clearPipCache } from './pip';
 import { runCompatibilityAnalysis } from './compatibility';
@@ -13,8 +13,9 @@ export const pythonAdapter: EcosystemAdapter = {
 		// Fix R1: limpiar caché de pip al inicio de cada scan
 		clearPipCache();
 
-		const content = readFileWithEncoding(filePath);
-		const parsed = parseRequirements(content);
+		// parseRequirementsFile lee el archivo, resuelve -r recursivamente
+		// y deduplica. Sustituye a readFileWithEncoding + parseRequirements.
+		const parsed = parseRequirementsFile(filePath);
 
 		const packages = await Promise.all(
 			parsed.map(pkg => checkPyPI(pkg.name, pkg.version, pkg.exactVersion, isPro))

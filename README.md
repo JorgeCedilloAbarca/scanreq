@@ -1,172 +1,193 @@
 # ScanReq — Dependency Security Scanner for VS Code
 
-Know what's vulnerable in your project before your users find out.
+**Real-time CVE detection and outdated package alerts for Python, Node.js, Rust, Go, PHP, Ruby and Java — directly inside VS Code.**
 
-ScanReq scans every dependency file in your workspace, checks each package against its public registry, and flags CVEs from OSV.dev — **automatically, every time you save.**
+8 ecosystems. Zero config. One panel.
 
-No configuration. No CLI. No leaving the editor.
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/trustdev.scanreq?label=VS%20Code%20Marketplace&color=5a4ee0&style=flat-square)](https://marketplace.visualstudio.com/items?itemName=trustdev.scanreq)
+[![Ecosystems](https://img.shields.io/badge/ecosystems-8-34d399?style=flat-square)]()
+[![License](https://img.shields.io/badge/license-MIT-9090a8?style=flat-square)](LICENSE)
 
 ---
 
 ## Screenshots
 
-> Scanned against real open-source projects from GitHub — not hand-picked examples.
+> Scanned against real open-source projects — not hand-picked examples. See all 8 ecosystems at [scanreq.com/showcase](https://scanreq.com/showcase).
 
-**Node.js project — axios 1.13.0 with 5 HIGH CVEs detected, major version jumps flagged**
-![ScanReq panel showing a Node.js project with 77 outdated packages and 13 CVEs, including 5 HIGH severity CVEs on axios](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot1_clean.png)
+### Free plan
 
-**Gradle project — commons-io CVE detected inline with GHSA ID and severity**
-![ScanReq panel showing a Gradle project with 4 outdated packages and 1 CVE on commons-io](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot2_clean.png)
+**Node.js (libphonenumber-js) — 20 outdated, all marked ⚠ Unverified because Free cannot resolve non-exact versions**
 
-**Pro — Safe update plan with 3-phase migration table and compatibility analysis**
-![ScanReq Pro compatibility analysis panel showing Phase 1 low-risk and Phase 2 medium-risk update recommendations](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot3_clean.png)
+![ScanReq Free plan showing Node.js project with Unverified badges on all non-exact versions](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot_free.png)
+
+### Pro plan
+
+**Python (apt-mirror2) — 14 outdated, 2 dependency conflicts detected, pip-compile format with `-r` recursive includes resolved**
+
+![ScanReq Pro scanning apt-mirror2 Python project with exact versions and major badges](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot_pro_python.png)
+
+**Ruby (rails/rails) — 89 outdated, 7 CVEs including 5 HIGH on rack, 1 dependency conflict**
+
+![ScanReq Pro scanning rails with 7 CVEs and 89 outdated gems](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot_pro_ruby.png)
+
+**Java Maven (spring-petclinic) — 5 HIGH CVEs on Spring Boot Actuator and PostgreSQL, BOM version resolution**
+
+![ScanReq Pro scanning spring-petclinic with HIGH CVEs and Spring Boot BOM resolution](https://raw.githubusercontent.com/JorgeCedilloAbarca/scanreq/main/images/screenshot_pro_java.png)
 
 ---
 
-## The problem it solves
+## Why ScanReq
 
-You open a cloned repo. It has 80 dependencies. Some are two years old. You have no idea which ones have known CVEs, which ones are 3 major versions behind, or which update will silently break your build.
+You open a cloned repo. It has 80 dependencies. Some are two years old. You don't know which ones have known CVEs, which are 3 major versions behind, or which update will break your build.
 
-`npm audit` / `pip-audit` / `cargo audit` help — but only for one ecosystem at a time, only from the terminal, and only when you remember to run them.
+`npm audit`, `pip-audit`, `cargo audit` — they help, but only one ecosystem at a time, only from the terminal, and only when you remember to run them.
 
-ScanReq runs in the background, covers 8 ecosystems at once, and surfaces the answer without you asking.
+ScanReq runs in the background, covers 8 ecosystems at once, and shows the answer without you asking.
 
 ---
 
 ## Supported ecosystems
 
-| | Ecosystem | File scanned | Registry |
-|---|---|---|---|
-| 🐍 | Python | `requirements.txt` | PyPI |
-| 🟩 | Node.js | `package.json` | npm |
-| 🦀 | Rust | `Cargo.toml` | crates.io |
-| 🔵 | Go | `go.mod` | proxy.golang.org |
-| 🐘 | PHP | `composer.json` | Packagist |
-| 💎 | Ruby | `Gemfile` | RubyGems |
-| ☕ | Java (Maven) | `pom.xml` | Maven Central |
-| ☕ | Java (Gradle) | `build.gradle` / `build.gradle.kts` | Maven Central |
+| | Ecosystem | Dependency file | Registry | Lockfile support |
+|---|---|---|---|---|
+| 🐍 | Python | `requirements.txt` | PyPI | pip installed version detection |
+| 🟩 | Node.js | `package.json` | npm | package-lock, pnpm-lock, yarn.lock |
+| 🦀 | Rust | `Cargo.toml` | crates.io | Cargo.lock (workspace-aware) |
+| 🔵 | Go | `go.mod` | proxy.golang.org | go mod graph (transitive) |
+| 🐘 | PHP | `composer.json` | Packagist | composer.lock (monorepo-aware) |
+| 💎 | Ruby | `Gemfile` | RubyGems | Gemfile.lock |
+| ☕ | Java (Maven) | `pom.xml` | Maven Central | Spring Boot BOM resolution |
+| ☕ | Java (Gradle) | `build.gradle` / `.kts` | Maven Central | platform() BOM resolution |
 
-All 8 ecosystems work automatically — no per-language setup.
+No per-language configuration. Open a project and it works.
 
 ---
 
 ## How it works
 
-1. Open any project. ScanReq detects your dependency files automatically.
-2. A background scan runs — no spinner blocking your editor, no command to type.
-3. The status bar badge updates: 🔴 critical issues / 🟠 outdated / 🟢 clean.
-4. Click the badge (or `Ctrl+Shift+P → ScanReq: Scan dependencies`) to open the full results panel.
-5. Every time you save a dependency file, the scan reruns automatically.
+1. **Open any project.** ScanReq detects dependency files automatically across all subdirectories.
+2. **Background scan.** Queries each registry and OSV.dev for CVEs — no spinner blocking your editor.
+3. **Status bar badge.** 🔴 vulnerabilities found · 🟠 outdated packages · 🟢 everything clean.
+4. **Results panel.** Click the badge or run `Ctrl+Shift+P → ScanReq: Scan dependencies`.
+5. **Auto-refresh.** Every time you save a dependency file, the scan reruns.
 
-Monorepo? ScanReq finds every dependency file across all subdirectories and shows them as separate sections in a single panel.
-
----
-
-## Free plan
-
-Everything below is free, forever, with no account required:
-
-- ✅ Scans all 8 ecosystems in any workspace
-- ✅ Compares your versions against the latest in each registry
-- ✅ CVE detection via OSV.dev for packages pinned to exact versions (`==`, `=`)
-- ✅ Color-coded results panel — one section per ecosystem
-- ✅ Status bar badge (red / orange / green)
-- ✅ Smart alerts at the bottom of the panel: critical CVE warnings, bulk update notices, actionable recommendations
-- ✅ Auto-refresh on file save
-- ✅ Monorepo support
-- ✅ English and Spanish UI
-
-**Limitation to know:** CVE detection on the free plan only works for exact version pins. If you write `>=1.2.0` or `^4.0.0`, ScanReq marks the package as `⚠ Unverified` — it cannot determine which version is actually installed without Pro.
+Works in monorepos — every dependency file gets its own section in a single panel.
 
 ---
 
-## Pro plan — $19 USD / €17 EUR, one-time payment
+## Free plan — no account required
 
-Pro exists for one reason: most real projects don't pin every version exactly, and most real projects have transitive conflicts nobody notices until something breaks in production.
+| Feature | |
+|---|---|
+| All 8 ecosystems | ✅ |
+| Registry version check (PyPI, npm, crates.io, Maven Central, Packagist, RubyGems, proxy.golang.org) | ✅ |
+| CVE detection for exact versions via OSV.dev | ✅ |
+| Color-coded results panel with inline CVE details | ✅ |
+| Status bar badge | ✅ |
+| Smart insights (critical warnings, bulk update notices) | ✅ |
+| Auto-refresh on save | ✅ |
+| Monorepo support | ✅ |
+| English and Spanish UI | ✅ |
 
-### What Pro adds
+> **Note:** CVE detection on the free plan requires exact version pins (`==`, `=`). Non-exact specifiers (`>=`, `^`, `~=`) are marked `⚠ Unverified` — Pro resolves the actual installed version.
 
-**CVE detection for non-exact versions**
-When you write `>=`, `^`, `~=`, `~>` or a range, ScanReq Pro detects the version actually installed — via `pip`, `node_modules`, `composer.lock`, `Gemfile.lock`, or the manifest directly — and checks *that* version against OSV.dev. You get real CVE results, not a grey "Unverified" badge.
+---
 
-**Major version badge**
-Any package that requires a major version jump to update is flagged with `⚠ Major` in the panel. At a glance you can separate "run the update" from "this needs a migration plan."
+## Pro — $19 one-time payment
 
-**Safe update table — 3 phases by migration risk**
-Instead of a flat list of 40 packages to update, Pro gives you a prioritized plan:
+Most real projects don't pin every version. Most real projects have transitive conflicts nobody notices until production breaks. Pro solves both.
 
-| Phase | What it means | Action |
+### CVE detection for all version specifiers
+
+When you write `>=`, `^`, `~=`, `~>` or a range, Pro detects the version actually installed via `pip`, `node_modules`, `composer.lock`, `Gemfile.lock`, or `Cargo.lock` — and checks *that* version against OSV.dev.
+
+### Dependency conflict detection
+
+Detects cases where package A requires `foo>=2.0` and package B requires `foo<2.0` before your build fails. Works across Python, Node.js, Rust, Go, PHP, and Ruby.
+
+### Safe update plan — 3 phases by risk
+
+| Phase | Risk level | Action |
 |---|---|---|
-| 1 — Low risk | Patch / minor update, no CVEs | Apply directly |
-| 2 — Medium risk | Has CVEs, or one major version jump | Review changelog first |
-| 3 — High risk | Two or more major version jumps | Plan migration before updating |
+| Phase 1 | Low — patch/minor, no CVEs | Update directly |
+| Phase 2 | Medium — has CVEs, needs review | Check changelog first |
+| Phase 3 | High — major version jump | Plan migration |
 
-Within each phase, packages with CVEs are listed first.
+CRITICAL and HIGH CVEs are forced to Phase 3 regardless of version jump. Packages with CVEs are listed first within each phase.
 
-**Cross-version compatibility analysis**
-Detects dependency conflicts — cases where package A requires `foo>=2.0` and package B requires `foo<2.0`. Works for Python, Node.js, Rust, PHP, and Ruby.
+### Major version badge
 
-**Go transitive conflict analysis**
-If Go is in your PATH, ScanReq runs `go mod graph` to surface indirect dependency conflicts your `go.mod` doesn't make obvious.
+`⚠ Major` and `⚠ +N major` badges appear on packages that require a breaking version jump. Visible at a glance — separate "run the update" from "this needs a migration plan."
 
-**Spring Boot BOM resolution (Maven & Gradle)**
-Projects that inherit from `spring-boot-starter-parent` or use `spring-boot-dependencies` platform BOM get full version resolution — ScanReq downloads and parses the BOM so managed dependencies show real version data, not blanks.
+### Spring Boot BOM resolution
 
-**🤖 AI prompt export**
-One click copies a structured prompt to your clipboard with the full scan results, ready to paste into Claude, Copilot, or Cursor. Ask your AI assistant to plan the migration, and it already has the context it needs.
+Projects using `spring-boot-starter-parent` or `spring-boot-dependencies` BOM (Maven and Gradle) get full version resolution. ScanReq downloads and parses the BOM from Maven Central.
 
-### Free vs Pro at a glance
+### Go transitive analysis
+
+With Go in PATH, ScanReq runs `go mod graph` to detect indirect dependency conflicts invisible in `go.mod`.
+
+### 🤖 AI prompt export
+
+One click copies a structured prompt with the full scan — CVEs, conflicts, versions, recommendations. Paste into Claude, Copilot, or Cursor and let AI plan the migration with real data.
+
+### Free vs Pro
 
 | Feature | Free | Pro |
 |---|---|---|
-| All 8 ecosystems | ✅ | ✅ |
-| Real-time registry check | ✅ | ✅ |
-| CVE detection (exact versions) | ✅ | ✅ |
-| Visual results panel | ✅ | ✅ |
-| Smart insights | ✅ | ✅ |
-| Status bar badge | ✅ | ✅ |
-| CVE detection for non-exact versions (`>=`, `^`, `~=`…) | ❌ | ✅ |
-| Auto-detect installed version (pip / node_modules / lockfiles) | ❌ | ✅ |
-| Cross-version compatibility analysis | ❌ | ✅ |
-| Dependency conflict detection | ❌ | ✅ |
-| Go transitive conflict analysis | ❌ | ✅ |
-| Spring Boot BOM resolution (Maven / Gradle) | ❌ | ✅ |
-| ⚠ Major version badge | ❌ | ✅ |
-| Safe updates — 3-phase migration plan | ❌ | ✅ |
-| 🤖 AI prompt export | ❌ | ✅ |
+| All 8 ecosystems, registry check, CVE detection (exact) | ✅ | ✅ |
+| CVE detection for `>=`, `^`, `~=`, ranges | — | ✅ |
+| Installed version detection (pip, node_modules, lockfiles) | — | ✅ |
+| Cross-version compatibility analysis | — | ✅ |
+| Dependency conflict detection | — | ✅ |
+| Go transitive conflict analysis | — | ✅ |
+| Spring Boot BOM resolution | — | ✅ |
+| ⚠ Major version badge | — | ✅ |
+| Safe update plan (3 phases) | — | ✅ |
+| 🤖 AI prompt export | — | ✅ |
 
-**$19 USD / €17 EUR — one-time payment. No subscription. Works on all your machines.**
+**$19 USD / €17 EUR · One-time · No subscription · All your machines**
 
-→ [Get Pro at scanreq.com/pricing](https://scanreq.com/pricing)
+→ **[Get Pro](https://scanreq.com/pricing)** · [See it in action](https://scanreq.com/showcase)
 
 ---
 
-## Activating Pro
+## Getting started
+
+### Install
+
+From VS Code: `Ctrl+Shift+X` → search **ScanReq** → Install.
+
+Or from the terminal:
+
+```
+ext install trustdev.scanreq
+```
+
+### Activate Pro
 
 1. Purchase at [scanreq.com/pricing](https://scanreq.com/pricing)
-2. Your license token is delivered instantly on the success page and sent to your email.
-3. `Ctrl+Shift+P` → **ScanReq: Activate Pro Plan**
-4. Enter your license token — Pro activates instantly.
+2. Your token is delivered on the success page and sent to your email
+3. `Ctrl+Shift+P` → **ScanReq: Activate Pro Plan** → paste your token
 
-**Lost your token?** Recover it anytime at [scanreq.com/recover](https://scanreq.com/recover) — enter the email you used to purchase and we'll send it to you.
+Lost your token? Recover it at [scanreq.com/recover](https://scanreq.com/recover).
 
 ---
 
 ## Requirements
 
-**Free plan:** no external tools required. ScanReq queries all registries directly over HTTPS.
+**Free:** nothing. ScanReq queries all registries over HTTPS with no local tools needed.
 
-**Pro plan** — most features need nothing extra, with a few exceptions:
+**Pro** — most features work without anything extra:
 
-| Ecosystem | What's needed for Pro |
+| Ecosystem | Pro requirement |
 |---|---|
-| Python | `pip` in PATH (for installed version detection). If not found, a notice appears in the panel. |
-| Node.js | `node_modules` present (run `npm install` first). ScanReq does not need `npm` in PATH. |
-| Go | `go` in PATH for transitive conflict analysis via `go mod graph`. Safe update table works without it. |
-| PHP | Nothing — uses `composer.lock` if present. |
-| Ruby | Nothing — uses `Gemfile.lock` if present. |
-| Rust | Nothing — `Cargo.toml` always contains explicit versions. |
-| Java | Nothing — versions are read directly from `pom.xml` or `build.gradle`. |
+| Python | `pip` in PATH (installed version detection) |
+| Node.js | `node_modules` present (`npm install`) |
+| Go | `go` in PATH (transitive graph via `go mod graph`) |
+| PHP, Ruby, Rust, Java | Nothing additional |
+
+If a tool is missing, ScanReq shows a specific notice in the panel — it never fails silently.
 
 ---
 
@@ -174,28 +195,30 @@ One click copies a structured prompt to your clipboard with the full scan result
 
 | Setting | Default | Description |
 |---|---|---|
-| `scanreq.autoOpenPanel` | `false` | Open the results panel automatically on startup or when a dependency file changes |
-| `scanreq.showNotification` | `true` | Show a notification while the scan is running |
-| `scanreq.excludePaths` | `[]` | Glob patterns for paths to exclude from scanning. Examples: `src/functionalTest`, `**/test/resources`, `**/fixtures` |
+| `scanreq.autoOpenPanel` | `false` | Open results panel on startup or dependency file changes |
+| `scanreq.showNotification` | `true` | Show progress notification during scan |
+| `scanreq.excludePaths` | `[]` | Glob patterns to exclude from scanning (e.g. `**/test/resources`, `**/fixtures`) |
 
 ---
 
 ## Privacy
 
-ScanReq sends no telemetry and collects no personal data.
+ScanReq sends **no telemetry** and collects **no personal data**.
 
-Package names and versions are sent only to the relevant public registries (PyPI, npm, crates.io, proxy.golang.org, Packagist, RubyGems, Maven Central) and to OSV.dev for CVE lookups. No usage data is tracked.
+Package names and versions are sent only to public registries and OSV.dev for CVE lookups. No usage data is tracked. Pro tokens are validated against scanreq.com — the token is stored in VS Code's global state.
 
-Pro license tokens are validated against scanreq.com. The token is stored in VS Code's global state (plain text on disk — do not activate Pro on shared machines or CI environments).
+Full policy at [scanreq.com/privacy](https://scanreq.com/privacy).
 
 ---
 
 ## Release notes
 
-See [CHANGELOG.md](CHANGELOG.md) for the full history.
+See [CHANGELOG.md](CHANGELOG.md) for full history.
 
-**v2.6.4** — Critical fix: Python conflict detection was 100% broken (double backslash regex). Spring Boot Kotlin DSL now detected in `build.gradle.kts`. Pre-release comparisons fixed. Node x-ranges (`16.x`) properly handled. CalVer detection prevents absurd major jump badges. CRITICAL/HIGH CVEs now force Phase 3. Platform-specific CVE badges. Ecosystem-specific tool messages. New `scanreq.excludePaths` setting.
+**v2.7.0** — Python `-r` recursive include support. Ruby `eval_gemfile` support. Rust Cargo.lock workspace resolution. PHP composer.lock monorepo resolution. Ruby platform-specific gems filtered. pip-compile hash format support.
+
+**v2.6.4** — Python conflict detection fix. Spring Boot Kotlin DSL detection. Pre-release comparisons. CalVer detection. CRITICAL/HIGH CVEs force Phase 3. Platform-specific CVE badges. `scanreq.excludePaths` setting.
 
 ---
 
-[scanreq.com](https://scanreq.com) · [GitHub](https://github.com/JorgeCedilloAbarca/scanreq) · [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=trustdev.scanreq)
+**[scanreq.com](https://scanreq.com)** · **[Marketplace](https://marketplace.visualstudio.com/items?itemName=trustdev.scanreq)** · **[GitHub](https://github.com/JorgeCedilloAbarca/scanreq)** · **[Showcase](https://scanreq.com/showcase)**
